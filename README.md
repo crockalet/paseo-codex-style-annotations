@@ -1,16 +1,16 @@
 # Codex Style Chat Annotations
 
-Select text in a Paseo agent chat, attach it as an annotation, and add an optional comment.
+Select text in a Paseo chat, file editor, Markdown preview, Diff, or terminal, attach it as an annotation, and add an optional comment.
 Draft and sent annotations collapse into an **n 条注释** capsule. You can also ask about a
 selection in a side chat.
 
 ![Codex Style Chat Annotations illustrated preview using sample data](assets/preview.png)
 
-The preview illustrates the interface with sample data.
+The preview illustrates the chat interface with sample data. External sources and annotation-type settings are available in this source checkout; the published `v0.1.1` release contains chat annotations.
 
 ## Install
 
-Codex Style Chat Annotations requires Paseo 0.11.2 or later.
+Codex Style Chat Annotations requires Paseo 0.11.4 or later with native plugin Settings support.
 Enable plugins in **Settings > Plugins**. Disable the original `quote` plugin before enabling
 Codex Style Chat Annotations. Running both is unsupported.
 
@@ -25,7 +25,7 @@ Editing a legacy draft preserves its identity and metadata. New annotations use 
 
 ## Add and edit annotations
 
-Select chat text and click **添加到对话**. The annotation appears immediately. Add a comment
+Select text and click **添加到对话**. External selections show the receiving chat. Choose a receiver when several chats belong to the same workspace. A file, Diff, or terminal can add an annotation without an open composer. The annotation appears immediately. Add a comment
 in **添加可选评论...**, or leave it empty and edit it later. Adding an annotation does not
 send a message. Send the draft with Paseo's normal message controls.
 
@@ -43,9 +43,27 @@ the attempted operation remains available for retry. Dismissing the card after a
 does not undo that operation. Resolve write errors before reloading or disabling the plugin.
 Unsaved retry text lives only in memory.
 
-Click a summary entry to return to its source. Source positions reset after a reload or source
-replacement. **原文位置不可用** disables navigation while editing and removal remain available.
-Quotes and saved comments persist in Paseo's native draft store.
+Click a summary entry to return to its source. Exact file highlighting requires the captured document to match, including unsaved edits. Otherwise the action reports that it opened the file without verifying the original position. Markdown preview selections have a path and rendered text, without source line numbers. Diff selections preserve the side, display path, renamed old path, source range, and comparison. Reopening a Diff reports that the original line position is unavailable. Terminal locations use buffer coordinates, never file lines. Terminal output, resize, buffer changes, closure, or reload can make exact terminal navigation unavailable.
+
+Saved text and comments remain readable after source loss or reload. **原文位置不可用** does not prevent editing or removal. Quotes and comments persist in Paseo's native draft store.
+
+## Choose annotation types
+
+Open **Settings > Plugins > Codex Style Chat Annotations > 注释类型**. Chat, file, Diff, Markdown preview, and terminal annotation switches default to on. Settings belong to the plugin installation on that host and apply to its authorized clients. Turning a type off prevents new annotations of that type. Saved annotations remain readable and editable. The chat switch keeps **在侧边聊天中提问** available.
+
+Settings load when the plugin starts. Each Add checks the saved settings again, so another client's changes apply before a new annotation is written. Read errors and invalid documents disable new annotation creation until the settings can be read. Use **重试读取** in the settings screen to recover. Failed saves and revision conflicts stay visible and preserve the saved values.
+
+## Supported source selections
+
+| Source | Captured text and limits |
+| --- | --- |
+| Chat | Existing rendered text and host Markdown serialization. Side chat remains available. |
+| File editor and read-only code | Exact CodeMirror text, character range, file lines, and document fingerprint. One continuous selection. |
+| Markdown preview | Exact rendered selection and file path, including rendered front matter. No inferred Markdown source lines. |
+| Canvas Diff | Exact host selection for one continuous file and side in split or unified layout. Mixed files, mixed sides, hunk headers, and gaps are refused. Commit target and working comparison are retained. Working base refs are mutable and do not establish immutable Git revisions. |
+| Terminal | Exact xterm text, terminal session, buffer kind, and buffer coordinates. Clipboard and terminal input are not used for capture. |
+
+External side-chat and browser-page selections are not supported. Locator metadata is bounded; unusually long Diff ranges can be refused instead of losing source information.
 
 ## Read sent annotations
 
@@ -68,18 +86,17 @@ full Paseo renderer.
 
 ## Data access and compatibility
 
-Codex Style Chat Annotations is trusted client code. It reads selected chat text,
-the active agent and draft, sent message attachments, and recent conversation text for side chats.
+Codex Style Chat Annotations is trusted client code. It reads selections and their file, Diff, or terminal context, the same-workspace agent directory and drafts, sent message attachments, native annotation-type settings, and recent conversation text for side chats.
 It stores annotations
 in the existing native draft and writes to the clipboard when you choose to copy an entry.
 When you send the draft, Paseo sends the quote and comment through your configured agent
 provider. Asking in a side chat sends the selection, question, and recent context to that
 provider. The plugin adds no external backend and installs no software at runtime.
 
-The native draft and sent-message adapters inspect private app interfaces and fetch the app's
+The native draft, source-selection, and sent-message adapters inspect private app interfaces and fetch the app's
 own JavaScript bundles from the same origin. These interfaces are not a stable plugin API.
 Compatibility checks reject unknown contracts, and a Paseo update can require an adapter update.
-The annotation UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. Light themes,
+The original chat UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. External capture is covered by isolated original-module browser checks against disk renderer 0.12.0-beta.3. This does not establish the version or behavior of a running client. Light themes,
 browser clients, and mobile clients have not been independently verified. Selection actions
 target desktop and web clients. Mobile platforms use their system selection menu. Annotation
 controls currently use Chinese labels, and side chat controls include English.
