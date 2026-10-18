@@ -60,31 +60,35 @@ function controls(f: ReturnType<typeof fixture>) {
   return { element, shadow, button, panel };
 }
 
-test("existing mixed sent row keeps React state, native media/file/body/copy and token footer while exposing exact complete text", async () => {
-  const f = fixture(); await f.render();
-  const native = f.native(), image = native.querySelector("img")!, frames = [...native.querySelectorAll<HTMLElement>("[data-frame]")];
-  await act(async () => image.parentElement!.click());
-  const footer = f.doc.createElement("div"); footer.textContent = "token footer"; native.after(footer);
-  let dispose = f.install();
-  try {
-    await tick();
-    const { element, shadow, button, panel } = controls(f);
-    assert.equal(button.textContent, "1 条注释");
-    assert.equal(element.nextSibling, native); assert.equal(native.nextSibling, footer);
-    assert.equal(f.doc.querySelector('[data-paseo-sent-quotes="popup"]')!.parentElement, f.doc.body);
-    assert.equal(native.style.display, ""); assert.equal(frames[0].style.display, "none"); assert.equal(frames[1].style.display, "");
-    assert.equal(f.native(), native); assert.equal(native.querySelector("img"), image); assert.equal(image.alt, "opened");
-    native.querySelector<HTMLButtonElement>("[data-copy]")!.click(); assert.equal(f.copied().bodyCopied, defaults.message);
-    button.click(); assert.equal(panel.hidden, false); assert.equal(shadow.querySelector("pre")!.textContent, quote().text);
-    shadow.querySelector<HTMLButtonElement>(".copy")!.click(); await tick(); assert.equal(f.copied().quoteCopied, quote().text);
-    await f.render({ ...defaults }); assert.equal(f.capsule(), element); assert.equal(panel.hidden, false);
-    await new Promise((resolve) => setTimeout(resolve, 1050));
-    assert.equal(f.capsule(), element); assert.equal(native.nextSibling, footer);
-    assert.deepEqual(f.counts(), { mounts: 1, unmounts: 0 });
-    dispose(); dispose(); assert.equal(f.capsule(), null); assert.equal(frames[0].style.display, ""); assert.equal(native.nextSibling, footer);
-    dispose = f.install(); await tick(); assert.ok(f.capsule());
-  } finally { dispose(); await f.close(); }
-});
+for (const provider of ["quote", "quote-notes"]) {
+  test(`${provider} mixed sent row keeps React state, native media/file/body/copy and token footer while exposing exact complete text`, async () => {
+    const attachment = { ...quote(), externalResource: { ...quote().externalResource, provider } };
+    const props = { ...defaults, attachments: [attachment, file] };
+    const f = fixture(); await f.render(props);
+    const native = f.native(), image = native.querySelector("img")!, frames = [...native.querySelectorAll<HTMLElement>("[data-frame]")];
+    await act(async () => image.parentElement!.click());
+    const footer = f.doc.createElement("div"); footer.textContent = "token footer"; native.after(footer);
+    let dispose = f.install();
+    try {
+      await tick();
+      const { element, shadow, button, panel } = controls(f);
+      assert.equal(button.textContent, "1 条注释");
+      assert.equal(element.nextSibling, native); assert.equal(native.nextSibling, footer);
+      assert.equal(f.doc.querySelector('[data-paseo-sent-quotes="popup"]')!.parentElement, f.doc.body);
+      assert.equal(native.style.display, ""); assert.equal(frames[0].style.display, "none"); assert.equal(frames[1].style.display, "");
+      assert.equal(f.native(), native); assert.equal(native.querySelector("img"), image); assert.equal(image.alt, "opened");
+      native.querySelector<HTMLButtonElement>("[data-copy]")!.click(); assert.equal(f.copied().bodyCopied, defaults.message);
+      button.click(); assert.equal(panel.hidden, false); assert.equal(shadow.querySelector("pre")!.textContent, quote().text);
+      shadow.querySelector<HTMLButtonElement>(".copy")!.click(); await tick(); assert.equal(f.copied().quoteCopied, quote().text);
+      await f.render({ ...props }); assert.equal(f.capsule(), element); assert.equal(panel.hidden, false);
+      await new Promise((resolve) => setTimeout(resolve, 1050));
+      assert.equal(f.capsule(), element); assert.equal(native.nextSibling, footer);
+      assert.deepEqual(f.counts(), { mounts: 1, unmounts: 0 });
+      dispose(); dispose(); assert.equal(f.capsule(), null); assert.equal(frames[0].style.display, ""); assert.equal(native.nextSibling, footer);
+      dispose = f.install(); await tick(); assert.ok(f.capsule());
+    } finally { dispose(); await f.close(); }
+  });
+}
 
 test("quote-only rows hide empty native shell reversibly, and numbered disclosure supports keyboard/outside and bounds", async () => {
   const f = fixture(); const second = quote("1f285941-27b0-45bc-89a8-8a4acc9fd050", "second\n\nfull content");

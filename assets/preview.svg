@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820">
+<defs><filter id="shadow" x="-25%" y="-25%" width="150%" height="170%"><feDropShadow dx="0" dy="8" stdDeviation="15" flood-opacity=".22"/></filter></defs>
+<rect width="1200" height="820" rx="24" fill="#171b17"/>
+<g font-family="Inter, Arial, PingFang SC, sans-serif">
+<text x="56" y="61" fill="#e0e4db" font-size="27" font-weight="600">Quote Notes</text>
+<text x="56" y="94" fill="#929e89" font-size="15">Draft and sent annotations</text>
+<text x="1144" y="61" text-anchor="end" fill="#929e89" font-size="13">Interface illustration with sample text</text>
+<line x1="56" y1="119" x2="1144" y2="119" stroke="#343b30"/>
+<text x="88" y="176" fill="#929e89" font-size="13">Edit a draft annotation</text>
+<g transform="translate(430 187)" filter="url(#shadow)">
+<rect width="294" height="124" rx="22" fill="#202321" stroke="#494d47"/>
+<text x="15" y="30" fill="#e0e4db" font-size="13">Show the error state in the preview.</text>
+<text x="15" y="51" fill="#e0e4db" font-size="13">Keep the current success example.</text>
+<g transform="translate(15 88)" stroke="#a3ad97" fill="none" stroke-width="1.6"><path d="M1 0h14M5 0v-3h6v3M3 2l1 12h8l1-12M6 4v7M10 4v7"/></g>
+<rect x="189" y="79" width="42" height="28" rx="14" fill="none" stroke="#494d47"/>
+<text x="210" y="97" text-anchor="middle" fill="#a3ad97" font-size="12">取消</text>
+<rect x="237" y="79" width="42" height="28" rx="14" fill="#e0e4db"/>
+<text x="258" y="97" text-anchor="middle" fill="#202321" font-size="12">保存</text>
+</g>
+<rect x="88" y="345" width="470" height="29" fill="#e1b12b" fill-opacity=".18"/>
+<path d="M88 374H558" stroke="#be9119" stroke-opacity=".5"/>
+<text x="88" y="366" fill="#e0e4db" font-size="20">Review the preview before you save the changes.</text>
+<path d="M572 359a14 14 0 0 1 14 14 14 14 0 0 1-14 14h-14v-14a14 14 0 0 1 14-14Z" fill="#a7c080" stroke="#e8eddf"/>
+<text x="572" y="378" text-anchor="middle" fill="#fff" font-size="13" font-weight="500">1</text>
+<text x="88" y="418" fill="#929e89" font-size="13">The annotation appears immediately. The comment is optional.</text>
+<g transform="translate(88 466)">
+<rect width="1024" height="154" rx="24" fill="#20251e" stroke="#343b30"/>
+<rect x="18" y="17" width="93" height="29" rx="14.5" fill="#3a4038" stroke="#51594c"/>
+<g transform="translate(28 25) scale(.55)" fill="none" stroke="#a3ad97" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a3 3 0 0 1-3 3H9l-6 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/><path d="M8 8h8M8 12h5"/></g>
+<text x="49" y="36" fill="#a3ad97" font-size="12">1 条注释</text>
+<text x="18" y="81" fill="#6e7a63" font-size="14">给 Agent 发消息，标记 @files，或使用 /commands 和 /skills</text>
+<text x="19" y="132" fill="#a3ad97" font-size="21">+</text>
+<text x="52" y="130" fill="#a3ad97" font-size="12">Model</text>
+<circle cx="994" cy="126" r="14" fill="#79a986"/>
+<path d="M994 133v-14m-5 5 5-5 5 5" fill="none" stroke="#20251e" stroke-width="1.5"/>
+</g>
+<line x1="56" y1="659" x2="1144" y2="659" stroke="#343b30"/>
+<text x="88" y="705" fill="#929e89" font-size="13">Sent annotations stay collapsed. Open the capsule to read or copy the full text.</text>
+<g transform="translate(1019 736)">
+<rect width="93" height="29" rx="14.5" fill="#3a4038" stroke="#51594c"/>
+<g transform="translate(10 8) scale(.55)" fill="none" stroke="#a3ad97" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a3 3 0 0 1-3 3H9l-6 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/><path d="M8 8h8M8 12h5"/></g>
+<text x="31" y="19" fill="#a3ad97" font-size="12">1 条注释</text>
+</g>
+</g></svg>

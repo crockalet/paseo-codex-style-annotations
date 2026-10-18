@@ -250,7 +250,7 @@ test("当前真实 bundle 按语义唯一定位模块，不依赖 Metro 数字",
   const quote = makeQuote(text, "原始引用", "paseo://app/h/fixture-host/workspace/workspace-one");
   host.validateAttachment(quote);
   const converted = z.object({ type: z.string(), mimeType: z.string(), text: z.string(), externalResource: z.object({ provider: z.string(), id: z.string() }) }).parse(converter(quote));
-  assert.deepEqual(converted, { type: "text", mimeType: "text/plain", text, externalResource: { provider: "quote", id: quote.item.id } });
+  assert.deepEqual(converted, { type: "text", mimeType: "text/plain", text, externalResource: { provider: "quote-notes", id: quote.item.id } });
 });
 
 test("已编辑正文的延迟发布保留新增引用和其他附件", async () => {

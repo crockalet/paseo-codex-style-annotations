@@ -1,10 +1,12 @@
 {
-  "name": "paseo-quote",
-  "version": "0.1.4-local.1",
+  "name": "@xzthemeofsss/paseo-quote-notes",
+  "version": "0.1.0",
   "files": [
     "paseo-plugin.json",
+    "OVERVIEW.md",
     "index.client.tsx",
-    "client/"
+    "client/",
+    "assets/"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -27,16 +29,16 @@
     "zod": "^4.4.3",
     "zustand": "^5.0.8"
   },
-  "description": "Add selected chat text to native Paseo draft annotations with optional comments, or ask in a side chat",
+  "description": "Add selected chat text to annotations with optional comments and a side chat in Paseo.",
   "license": "MIT",
-  "author": "Chechulin Serhii",
+  "author": "xzthemeofsss",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/keefeere/paseo-quote.git"
+    "url": "git+https://github.com/xzthemeofsss/paseo-quote-notes.git"
   },
-  "homepage": "https://github.com/keefeere/paseo-quote#readme",
+  "homepage": "https://github.com/xzthemeofsss/paseo-quote-notes#readme",
   "bugs": {
-    "url": "https://github.com/keefeere/paseo-quote/issues"
+    "url": "https://github.com/xzthemeofsss/paseo-quote-notes/issues"
   },
   "keywords": [
     "paseo",

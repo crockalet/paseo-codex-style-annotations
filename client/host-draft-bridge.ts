@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { decodeAnnotation, encodeAnnotation } from "./format";
+import { QUOTE_PLUGIN_ID, quotePluginIdSchema } from "./quote-identity";
 
 const callable = z.custom<(...args: unknown[]) => unknown>((value) => typeof value === "function");
 const schema = z.object({ safeParse: callable });
@@ -8,7 +9,7 @@ export type QuoteId = z.infer<typeof quoteId>;
 export const QUOTE_SOURCE = "selection-v1";
 export const quoteAttachmentSchema = z.object({
   kind: z.literal("plugin_resource"),
-  pluginId: z.literal("quote"),
+  pluginId: quotePluginIdSchema,
   sourceId: z.literal(QUOTE_SOURCE),
   sourceTitle: z.literal("引用"),
   sourceIcon: z.literal("MessageSquareQuote"),
@@ -71,7 +72,7 @@ export interface DraftHost {
 export function makeQuote(text: string, title: string, url: string): QuoteAttachment {
   const id = quoteId.parse(crypto.randomUUID());
   return quoteAttachmentSchema.parse({
-    kind: "plugin_resource", pluginId: "quote", sourceId: QUOTE_SOURCE,
+    kind: "plugin_resource", pluginId: QUOTE_PLUGIN_ID, sourceId: QUOTE_SOURCE,
     sourceTitle: "引用", sourceIcon: "MessageSquareQuote",
     item: { id, identifier: `quote-${id}`, title: title.trim().slice(0, 64) || "引用片段", url, text, resourceType: "quote" },
   });

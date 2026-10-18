@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ANNOTATION_ICON, annotationPalette } from "./annotation-visuals";
 import { discoverSentNative, type SentNative } from "./sent-native";
+import { quotePluginIdSchema } from "./quote-identity";
 
 const NATIVE = '[data-testid="user-message"]';
 const OWNED = "data-paseo-sent-quotes";
@@ -9,7 +10,7 @@ const HIDDEN = "data-paseo-sent-quote-hidden";
 const propsSchema = z.object({ serverId: z.string().min(1), agentId: z.string().min(1), messageId: z.string().min(1),
   message: z.string(), images: z.array(z.unknown()).default([]), attachments: z.array(z.unknown()).default([]), isPending: z.boolean().default(false) });
 const quoteSchema = z.object({ type: z.literal("text"), mimeType: z.literal("text/plain"), text: z.string(),
-  externalResource: z.object({ provider: z.literal("quote"), resourceType: z.literal("quote"), id: z.string().uuid(),
+  externalResource: z.object({ provider: quotePluginIdSchema, resourceType: z.literal("quote"), id: z.string().uuid(),
     identifier: z.string(), title: z.string(), providerLabel: z.string() }) }).refine((item) => item.externalResource.identifier === `quote-${item.externalResource.id}`);
 const fiberSchema = z.object({ tag: z.number().int(), child: z.unknown(), sibling: z.unknown(), return: z.unknown(),
   stateNode: z.unknown(), elementType: z.unknown(), memoizedProps: z.unknown(), memoizedState: z.unknown() });
