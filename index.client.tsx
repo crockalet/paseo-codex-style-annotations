@@ -3,6 +3,7 @@ import { SideChatPanel } from "./client/side-chat-panel";
 import { installSelectionBar } from "./client/web";
 import { createAnnotationPreferences } from "./client/annotation-preferences";
 import { AnnotationSettings } from "./client/annotation-settings";
+import { installPluginCardName } from "./client/plugin-card-name";
 
 export default function contribute(client: PluginClientContext) {
   const preferences = createAnnotationPreferences(client);
@@ -16,7 +17,9 @@ export default function contribute(client: PluginClientContext) {
     Component: SideChatPanel,
   });
   const removeBar = installSelectionBar(client, preferences);
+  const removeCardName = installPluginCardName();
   return () => {
+    removeCardName();
     removeBar();
     removePanel(); removeSettings(); preferences.dispose();
   };
