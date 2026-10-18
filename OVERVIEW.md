@@ -1,7 +1,8 @@
-# Quote Notes
+# Codex Style Chat Annotations
 
-Quote Notes turns selected Paseo chat text into annotations with optional comments. Draft and
-sent annotations collapse into an **n 条注释** capsule. A numbered marker links a draft
+Codex Style Chat Annotations turns selected Paseo chat text into annotations with
+optional comments. Draft and sent annotations collapse into an **n 条注释** capsule.
+A numbered marker links a draft
 annotation to its source while that source remains available. You can edit or delete draft
 annotations, expand complete sent texts, and copy an entry.
 
@@ -12,9 +13,10 @@ or open the child as a regular chat tab.
 
 ## Setup and support
 
-Paseo 0.11.2 or later is required. Disable the original `quote` plugin before enabling Quote
-Notes. Running both is unsupported. Existing `quote` draft and sent attachments remain
-readable, and editing a legacy draft preserves its identity. New annotations use `quote-notes`.
+Paseo 0.11.2 or later is required. Disable the original `quote` plugin before enabling
+Codex Style Chat Annotations. Running both is unsupported.
+Existing `quote` draft and sent attachments remain readable, and editing a legacy draft
+preserves its identity. New annotations use `quote-notes`.
 No additional account or token is required. Annotation controls currently use Chinese labels,
 and side chat controls include English.
 
@@ -39,4 +41,5 @@ Source positions reset after a reload or source replacement. Saved quotes remain
 but navigation to an unavailable source is disabled. Sent annotations keep their complete
 text because Paseo no longer retains the separate comment metadata after sending. Resolve
 unconfirmed write errors before reloading or disabling the plugin. Retry text is held only
-in memory. Disabling Quote Notes restores native attachment cards without deleting saved quotes.
+in memory. Disabling Codex Style Chat Annotations restores native attachment cards
+without deleting saved quotes.
