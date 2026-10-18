@@ -1,4 +1,5 @@
-import manifest from "../paseo-plugin.json";
+const pluginId = "quote-notes";
+const pluginName = "Codex Style Annotations";
 
 const installations = new WeakMap<Document, { users: number; dispose: () => void }>();
 
@@ -27,13 +28,13 @@ export function installPluginCardName(): () => void {
   }
 
   function restore() {
-    if (owned?.data === manifest.name) owned.data = manifest.id;
+    if (owned?.data === pluginName) owned.data = pluginId;
     owned = null;
     observer.takeRecords();
   }
 
   function reconcile() {
-    const rows = doc.querySelectorAll(`[data-testid="plugin-row-${manifest.id}"]`);
+    const rows = doc.querySelectorAll(`[data-testid="plugin-row-${pluginId}"]`);
     const row = rows.length === 1 ? rows[0] : null;
     const column = row?.firstElementChild;
     const labelRow = column?.firstElementChild;
@@ -44,9 +45,9 @@ export function installPluginCardName(): () => void {
       title?.tagName === "DIV" && title.getAttribute("dir") === "auto" &&
       title.childNodes.length === 1 && text instanceof TextNode;
     if (owned && (!valid || owned !== text)) restore();
-    if (!valid || !(text instanceof TextNode) || text.data !== manifest.id) return;
+    if (!valid || !(text instanceof TextNode) || text.data !== pluginId) return;
     owned = text;
-    text.data = manifest.name;
+    text.data = pluginName;
     observer.takeRecords();
   }
 

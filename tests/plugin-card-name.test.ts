@@ -4,7 +4,6 @@ import { JSDOM } from "jsdom";
 import manifest from "../paseo-plugin.json";
 import { installPluginCardName } from "../client/plugin-card-name";
 
-// SettingsRow's accessory branch and PluginRow's hint/controls in Paseo 0.11.4.
 function card(id = manifest.id, name = id) {
   return `<div data-testid="plugin-row-${id}"><div><div><div dir="auto">${name}</div><div><div dir="auto">Running</div></div></div><div><div dir="auto">Description ${id}</div><div dir="auto">Local source ${id}</div></div><div role="alert" dir="auto">Error ${id}</div></div><div><div aria-label="${id} Running"><button role="switch" aria-label="${id}: Disable">Enabled</button><button aria-label="${id} actions">Actions</button></div></div></div>`;
 }
