@@ -326,19 +326,42 @@ function luminance([r, g, b]: Rgba): number {
 
 function applyPalette(host: DomElement, anchor: DomElement): void {
   const style = window.getComputedStyle(anchor);
-  const foreground = parseColor(style.color) ?? [220, 220, 220, 1];
+  const candidate: Rgba = parseColor(style.color) ?? [220, 220, 220, 1];
   let background: Rgba | null = null;
   for (let node: DomElement | null = anchor; node && !background; node = node.parentElement) {
     const color = parseColor(window.getComputedStyle(node).backgroundColor);
     if (color && color[3] > 0.95) background = color;
   }
-  background ??= luminance(foreground) > 0.5 ? [24, 24, 27, 1] : [250, 250, 250, 1];
+  background ??= luminance(candidate) > 0.5 ? [24, 24, 27, 1] : [250, 250, 250, 1];
+  const relativeLuminance = ([r, g, b]: Rgba): number => {
+    const linear = (channel: number): number => {
+      const value = Math.round(channel) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  };
+  const contrast = (a: Rgba, b: Rgba): number => {
+    const first = relativeLuminance(a), second = relativeLuminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
+  const black: Rgba = [0, 0, 0, 1], white: Rgba = [255, 255, 255, 1];
+  const neutral = (surface: Rgba): Rgba => contrast(black, surface) >= contrast(white, surface) ? black : white;
+  let foreground = candidate[3] > 0.95 && contrast(candidate, background) >= 4.5 ? candidate : neutral(background);
   const dark = luminance(background) < 0.5;
-  const surface = mix(background, foreground, dark ? 0.07 : 0.025);
+  let surface = mix(background, foreground, dark ? 0.07 : 0.025);
+  if (contrast(foreground, surface) < 4.5) {
+    foreground = neutral(background);
+    surface = mix(background, foreground, dark ? 0.07 : 0.025);
+    if (contrast(foreground, surface) < 4.5) surface = background;
+  }
+  const mutedCandidate = mix(surface, foreground, 0.68);
+  const muted = contrast(mutedCandidate, surface) >= 4.5 ? mutedCandidate : foreground;
 
   const tokens: Array<[string, string]> = [
     ["--pq-fg", css(foreground)],
-    ["--pq-muted", css(foreground, 0.62)],
+    ["--pq-muted", css(muted)],
+    ["--pq-disabled", css(muted)],
+    ["--pq-scheme", neutral(surface) === white ? "dark" : "light"],
     ["--pq-faint", css(foreground, 0.42)],
     ["--pq-border", css(foreground, dark ? 0.16 : 0.14)],
     ["--pq-hover", css(foreground, 0.09)],
@@ -354,10 +377,10 @@ function applyPalette(host: DomElement, anchor: DomElement): void {
 
 const STYLE = `
 :host{all:initial}*{box-sizing:border-box}
-.panel{font-family:var(--pq-font);font-size:13px;line-height:18px;color:var(--pq-fg);background:var(--pq-bg);border:1px solid var(--pq-border);border-radius:10px;box-shadow:var(--pq-shadow);user-select:none;-webkit-user-select:none}
+.panel{font-family:var(--pq-font);font-size:13px;line-height:18px;color:var(--pq-fg);background:var(--pq-bg);color-scheme:var(--pq-scheme);border:1px solid var(--pq-border);border-radius:10px;box-shadow:var(--pq-shadow);user-select:none;-webkit-user-select:none}
 .bar{display:flex;align-items:center;gap:2px;padding:3px}
 button{appearance:none;display:inline-flex;align-items:center;gap:6px;margin:0;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:pointer}
-button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:.4;cursor:default}button[hidden]{display:none}
+button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:1;color:var(--pq-disabled);background:transparent;cursor:default}button[hidden]{display:none}
 .editor{display:none;width:min(300px,calc(100vw - 16px));padding:4px}
 .panel[data-mode="side"] .bar{display:none}
 .panel[data-mode="side"] .editor{display:block}
@@ -366,7 +389,7 @@ button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:.
 .panel[data-mode="side"] .quote{display:block}
 .footer{display:flex;align-items:center;justify-content:flex-end;gap:2px}.status{flex:1 1 auto;font-size:11px;color:var(--pq-muted);overflow-wrap:anywhere;padding:0 5px}.status:empty{display:none}
 .primary{background:var(--pq-fg);color:var(--pq-primary-fg)}
-.source-label,.selection-status{max-width:240px;overflow:hidden;text-overflow:ellipsis;font-size:11px;padding:0 5px;color:var(--pq-muted)}select{font:inherit;color:inherit;background:var(--pq-bg);border:1px solid var(--pq-border);border-radius:6px;max-width:180px;padding:3px} [hidden]{display:none!important}
+.source-label,.selection-status{max-width:240px;overflow:hidden;text-overflow:ellipsis;font-size:11px;padding:0 5px;color:var(--pq-muted)}select{font:inherit;color:var(--pq-fg);background:var(--pq-bg);border:1px solid var(--pq-border);border-radius:6px;max-width:180px;padding:3px}option{color:var(--pq-fg);background:var(--pq-bg)} [hidden]{display:none!important}
 `;
 const MARKUP = `
 <style>${STYLE}</style>
