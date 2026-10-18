@@ -1,18 +1,18 @@
-# Codex Style Chat Annotations
+# Codex Style Annotations
 
 Select text in a Paseo chat, file editor, Markdown preview, Diff, or terminal, attach it as an annotation, and add an optional comment.
 Draft and sent annotations collapse into an **n 条注释** capsule. You can also ask about a
 selection in a side chat.
 
-![Codex Style Chat Annotations illustrated preview using sample data](assets/preview.png)
+![Codex Style Annotations illustrated preview using sample data](assets/preview.png)
 
 The preview illustrates the chat interface with sample data. External sources and annotation-type settings are available in this source checkout; the published `v0.1.1` release contains chat annotations.
 
 ## Install
 
-Codex Style Chat Annotations requires Paseo 0.11.4 or later with native plugin Settings support.
+Codex Style Annotations requires Paseo 0.11.4 or later with native plugin Settings support.
 Enable plugins in **Settings > Plugins**. Disable the original `quote` plugin before enabling
-Codex Style Chat Annotations. Running both is unsupported.
+Codex Style Annotations. Running both is unsupported.
 
 ```bash
 paseo plugin disable quote
@@ -49,7 +49,7 @@ Saved text and comments remain readable after source loss or reload. **原文位
 
 ## Choose annotation types
 
-Open **Settings > Plugins > Codex Style Chat Annotations > 注释类型**. Chat, file, Diff, Markdown preview, and terminal annotation switches default to on. Settings belong to the plugin installation on that host and apply to its authorized clients. Turning a type off prevents new annotations of that type. Saved annotations remain readable and editable. The chat switch keeps **在侧边聊天中提问** available.
+Open **Settings > Plugins > Codex Style Annotations > 注释类型**. Chat, file, Diff, Markdown preview, and terminal annotation switches default to on. Settings belong to the plugin installation on that host and apply to its authorized clients. Turning a type off prevents new annotations of that type. Saved annotations remain readable and editable. The chat switch keeps **在侧边聊天中提问** available.
 
 Settings load when the plugin starts. Each Add checks the saved settings again, so another client's changes apply before a new annotation is written. Read errors and invalid documents disable new annotation creation until the settings can be read. Use **重试读取** in the settings screen to recover. Failed saves and revision conflicts stay visible and preserve the saved values.
 
@@ -73,7 +73,7 @@ outside closes it. Sent annotations are read only.
 
 Paseo drops the separate comment metadata when sending. The expanded view keeps the complete
 sent text, including the comment, without inferring a split. Unsupported and pending message
-rows retain their native attachment cards. Disabling Codex Style Chat Annotations
+rows retain their native attachment cards. Disabling Codex Style Annotations
 restores the native cards.
 
 ## Ask in a side chat
@@ -86,7 +86,7 @@ full Paseo renderer.
 
 ## Data access and compatibility
 
-Codex Style Chat Annotations is trusted client code. It reads selections and their file, Diff, or terminal context, the same-workspace agent directory and drafts, sent message attachments, native annotation-type settings, and recent conversation text for side chats.
+Codex Style Annotations is trusted client code. It reads selections and their file, Diff, or terminal context, the same-workspace agent directory and drafts, sent message attachments, native annotation-type settings, and recent conversation text for side chats.
 It stores annotations
 in the existing native draft and writes to the clipboard when you choose to copy an entry.
 When you send the draft, Paseo sends the quote and comment through your configured agent
@@ -116,7 +116,7 @@ libraries, so installation needs no preparation command or runtime dependency in
 
 ## Credits and license
 
-Codex Style Chat Annotations is a fork of
+Codex Style Annotations is a fork of
 [paseo-quote by Chechulin Serhii](https://github.com/keefeere/paseo-quote).
 It adds draft annotation editing, source markers, and sent annotation capsules. The original
 [MIT license](LICENSE) and copyright notice are preserved.

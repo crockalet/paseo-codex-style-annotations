@@ -1,6 +1,6 @@
-# Codex Style Chat Annotations
+# Codex Style Annotations
 
-Codex Style Chat Annotations turns selected chat, file, Markdown preview, Diff, and terminal text into annotations with optional comments. Draft and sent annotations collapse into an **n 条注释** capsule.
+Codex Style Annotations turns selected chat, file, Markdown preview, Diff, and terminal text into annotations with optional comments. Draft and sent annotations collapse into an **n 条注释** capsule.
 A numbered marker links a draft
 annotation to its source while that source remains available. You can edit or delete draft
 annotations, expand complete sent texts, and copy an entry.
@@ -13,7 +13,7 @@ or open the child as a regular chat tab.
 ## Setup and support
 
 Paseo 0.11.4 or later with native plugin Settings support is required. Disable the original `quote` plugin before enabling
-Codex Style Chat Annotations. Running both is unsupported.
+Codex Style Annotations. Running both is unsupported.
 Existing `quote` draft and sent attachments remain readable, and editing a legacy draft
 preserves its identity. New annotations use `quote-notes`.
 In the plugin's **注释类型** settings, enable or disable chat, file, Diff, Markdown preview, and terminal annotations separately. All five start enabled. The settings belong to that host installation. Turning a type off affects new annotations. Saved annotations remain readable and editable, and chat side questions remain available. Settings load at startup and are checked again before Add. Read failures and save conflicts are visible and do not reset saved values.
@@ -41,5 +41,5 @@ External selections name the receiving chat, with an explicit choice when severa
 Saved text remains readable after source closure or reload. Exact file highlighting requires matching document content. Otherwise navigation reports a file-only or Diff-only open, or an unavailable position. Terminal output or resizing invalidates exact terminal reveal. External side-chat and browser-page selections are not supported. Saved quotes remain editable when their source is unavailable. Sent annotations keep their complete
 text because Paseo no longer retains the separate comment metadata after sending. Resolve
 unconfirmed write errors before reloading or disabling the plugin. Retry text is held only
-in memory. Disabling Codex Style Chat Annotations restores native attachment cards
+in memory. Disabling Codex Style Annotations restores native attachment cards
 without deleting saved quotes.

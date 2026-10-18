@@ -2,7 +2,7 @@
 <defs><filter id="shadow" x="-25%" y="-25%" width="150%" height="170%"><feDropShadow dx="0" dy="8" stdDeviation="15" flood-opacity=".22"/></filter></defs>
 <rect width="1200" height="820" rx="24" fill="#171b17"/>
 <g font-family="Inter, Arial, PingFang SC, sans-serif">
-<text x="56" y="61" fill="#e0e4db" font-size="27" font-weight="600">Codex Style Chat Annotations</text>
+<text x="56" y="61" fill="#e0e4db" font-size="27" font-weight="600">Codex Style Annotations</text>
 <text x="56" y="94" fill="#929e89" font-size="15">Draft and sent annotations</text>
 <text x="1144" y="61" text-anchor="end" fill="#929e89" font-size="13">Interface illustration with sample text</text>
 <line x1="56" y1="119" x2="1144" y2="119" stroke="#343b30"/>

@@ -1,6 +1,6 @@
 {
   "id": "quote-notes",
-  "name": "Codex Style Chat Annotations",
+  "name": "Codex Style Annotations",
   "description": "Annotate selected chat, file, Markdown, Diff, and terminal text with optional comments.",
   "media": [
     "assets/preview.png"
