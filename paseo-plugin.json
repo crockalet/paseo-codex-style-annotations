@@ -1,0 +1,7 @@
+{
+  "id": "quote",
+  "description": "Add selected text to draft annotations with optional comments, or ask in a side chat",
+  "requirements": {
+    "paseo": ">=0.11.2"
+  }
+}
