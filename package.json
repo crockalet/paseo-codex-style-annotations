@@ -6,11 +6,14 @@
     "OVERVIEW.md",
     "index.client.tsx",
     "client/",
-    "assets/"
+    "assets/",
+    "index.server.ts",
+    "shared/"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "test:sources": "node tests/source-browser-proof.mjs"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.11.2",
@@ -29,7 +32,7 @@
     "zod": "^4.4.3",
     "zustand": "^5.0.8"
   },
-  "description": "Add selected chat text to annotations with optional comments and a side chat in Paseo.",
+  "description": "Annotate selected chat, file, Markdown, Diff, and terminal text in Paseo with optional comments.",
   "license": "MIT",
   "author": "xzthemeofsss",
   "repository": {

@@ -1,11 +1,11 @@
 {
   "id": "quote-notes",
   "name": "Codex Style Chat Annotations",
-  "description": "Add selected chat text to annotations with optional comments and a side chat in Paseo.",
+  "description": "Annotate selected chat, file, Markdown, Diff, and terminal text with optional comments.",
   "media": [
     "assets/preview.png"
   ],
   "requirements": {
-    "paseo": ">=0.11.2"
+    "paseo": ">=0.11.4"
   }
 }

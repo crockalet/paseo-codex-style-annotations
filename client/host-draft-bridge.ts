@@ -43,6 +43,7 @@ const agentMap = z.custom<ReadonlyMap<unknown, unknown>>((value) => value instan
 const directorySchema = z.object({ agents: agentMap, agentDetails: agentMap });
 export interface ComposerBinding {
   readonly hostId: string;
+  readonly workspacePath: string;
   readonly agentId: string;
   readonly pane: HTMLElement;
   readonly anchor: HTMLElement;
@@ -50,9 +51,23 @@ export interface ComposerBinding {
   readonly wrapper: HTMLElement;
   readonly card: HTMLElement | null;
 }
+export interface StoreBinding {
+  readonly kind: "store";
+  readonly hostId: string;
+  readonly agentId: string;
+  readonly draftKey: string;
+  readonly anchor: HTMLElement;
+  readonly pane: HTMLElement;
+  readonly label: string;
+  readonly validate: () => boolean;
+}
+export type DraftBinding = ComposerBinding | StoreBinding;
+export function isStoreBinding(binding: DraftBinding): binding is StoreBinding { return "kind" in binding && binding.kind === "store"; }
+export function bindingElement(binding: DraftBinding): HTMLElement { return isStoreBinding(binding) ? binding.anchor : binding.input; }
+export function bindingCard(binding: DraftBinding): HTMLElement | null { return isStoreBinding(binding) ? null : binding.card; }
 export interface QuoteRef {
   readonly id: QuoteId;
-  readonly binding: ComposerBinding;
+  readonly binding: DraftBinding;
 }
 export type WriteOutcome =
   | { kind: "committed" }
@@ -129,15 +144,18 @@ export function bindComposer(input: unknown, anchor: unknown, agentId: string): 
   if (!(pane instanceof HTMLElement) || !(wrapper instanceof HTMLElement) || !hostId) return null;
   const transcript = anchor.closest('[data-testid="agent-chat-scroll"]');
   if (!(transcript instanceof HTMLElement)) return null;
-  const binding = { hostId, agentId, pane, anchor: transcript, input, wrapper, card: composerCard(input) };
+  const binding = { hostId, workspacePath: window.location.pathname, agentId, pane, anchor: transcript, input, wrapper, card: composerCard(input) };
   return bindingStatus(binding) !== "scope-changed" ? binding : null;
 }
-export function bindingStatus(binding: ComposerBinding): "ready" | "locked" | "scope-changed" {
+export function bindingStatus(binding: DraftBinding): "ready" | "locked" | "scope-changed" {
+  if (isStoreBinding(binding)) {
+    try { return binding.validate() ? "ready" : "scope-changed"; } catch { return "scope-changed"; }
+  }
   const { input, anchor, pane, wrapper, hostId, agentId } = binding;
   const transcript = anchor.closest('[data-testid="agent-chat-scroll"]');
   if (!input.isConnected || !anchor.isConnected || !pane.isConnected || !wrapper.contains(input)
     || !visible(input) || input.closest(PANE) !== pane || anchor.closest(PANE) !== pane
-    || currentHostId(window.location.href) !== hostId || !(transcript instanceof HTMLElement)
+    || currentHostId(window.location.href) !== hostId || window.location.pathname !== binding.workspacePath || !(transcript instanceof HTMLElement)
     || nearestUnique(transcript, INPUT) !== input
     || nearestUnique(transcript, TAB)?.getAttribute("data-testid") !== `${TAB_PREFIX}${agentId}`) return "scope-changed";
   if (input.disabled || input.readOnly || wrapper.closest('[aria-busy="true"]')
@@ -147,7 +165,7 @@ export function bindingStatus(binding: ComposerBinding): "ready" | "locked" | "s
 
 export async function mutateQuotes(options: {
   host: DraftHost;
-  binding: ComposerBinding;
+  binding: DraftBinding;
   change: { kind: "add"; attachment: QuoteAttachment } | { kind: "remove"; id: QuoteId };
   isCurrent?: () => boolean;
 }): Promise<WriteOutcome> {
@@ -160,23 +178,28 @@ export async function mutateQuotes(options: {
   try {
     if (!valid()) return { kind: "not-written", reason: "输入框已锁定或会话已切换。", fallback: false };
     key = host.key(binding.hostId, binding.agentId);
+    if (isStoreBinding(binding) && key !== binding.draftKey) return { kind: "not-written", reason: "接收对话身份已变化。", fallback: false };
     await host.hydrate(key);
     if (!valid()) return { kind: "not-written", reason: "输入框已锁定或会话已切换。", fallback: false };
     const previous = host.read(key);
-    const current = previous ?? { text: binding.input.value, attachments: [] };
+    const current = previous ?? { text: isStoreBinding(binding) ? "" : binding.input.value, attachments: [] };
     if (change.kind === "add") host.validateAttachment(change.attachment);
     matches = (value: unknown) => {
       const parsed = quoteAttachmentSchema.safeParse(value);
       return parsed.success && parsed.data.item.id === (change.kind === "add" ? change.attachment.item.id : change.id);
     };
     const present = current.attachments.some(matches);
-    if (present === (change.kind === "add")) return { kind: "committed" };
+    if (present === (change.kind === "add")) {
+      try { await host.flush(); } catch { return { kind: "uncertain", reason: "注释持久保存未确认，请重试同一操作。" }; }
+      return valid() ? { kind: "committed" } : { kind: "uncertain", reason: "会话已切换，请返回原对话确认注释。" };
+    }
     const attachments = change.kind === "add"
       ? [...current.attachments, change.attachment]
       : current.attachments.filter((value) => !matches(value));
     next = { ...current, attachments };
+    if (!valid()) return { kind: "not-written", reason: "会话已切换，注释未写入。", fallback: false };
   } catch (cause) {
-    return { kind: "not-written", reason: reason(cause), fallback: true };
+    return { kind: "not-written", reason: reason(cause), fallback: !isStoreBinding(binding) };
   }
   try {
     host.save(key, next);
@@ -211,6 +234,7 @@ export function writeQuoteComment(options: {
       return { kind: "not-written", reason: "会话已切换或输入框已锁定，评论尚未保存。返回原会话后可重试。", fallback: false };
     }
     key = host.key(binding.hostId, binding.agentId);
+    if (isStoreBinding(binding) && key !== binding.draftKey) return { kind: "not-written", reason: "接收对话身份已变化。", fallback: false };
     const current = host.read(key);
     const index = current?.attachments.findIndex((value) => {
       const parsed = quoteAttachmentSchema.safeParse(value);
@@ -226,6 +250,7 @@ export function writeQuoteComment(options: {
     const attachments = [...current.attachments];
     attachments[index] = updated;
     next = { ...current, attachments };
+    if (!(options.isCurrent?.() ?? true) || bindingStatus(binding) !== "ready") return { kind: "not-written", reason: "接收对话已切换，评论未保存。", fallback: false };
   } catch (cause) {
     return { kind: "not-written", reason: reason(cause), fallback: false };
   }
@@ -287,11 +312,11 @@ export function createDraftHost(requireModule: (id: number) => unknown, ids: Rec
   const state = () => stateSchema.parse(module.useDraftStore.getState());
   const validateAttachment = (attachment: QuoteAttachment) => {
     const parsed = quoteAttachmentSchema.parse(hostParse(resource.PluginResourceComposerAttachmentSchema, attachment));
-    if (parsed.item.subtitle !== attachment.item.subtitle) throw new Error("Paseo 无法完整保留评论，引用未修改。");
+    if (parsed.item.url !== attachment.item.url || parsed.item.id !== attachment.item.id || parsed.item.subtitle !== attachment.item.subtitle) throw new Error("Paseo 无法完整保留评论，引用未修改。");
     const converted = z.object({ type: z.literal("text"), mimeType: z.literal("text/plain"), text: z.string() }).parse(resource.pluginResourceAttachmentToAgentAttachment(parsed));
     if (converted.text !== attachment.item.text) throw new Error("Paseo 无法完整保留引用，使用普通引用。");
     const canonical = readQuotes(inputSchema.parse(hostParse(drafts.CanonicalDraftInputSchema, { text: "", attachments: [attachment] })))[0];
-    if (!canonical || canonical.item.text !== attachment.item.text || canonical.item.subtitle !== attachment.item.subtitle) {
+    if (!canonical || canonical.item.url !== attachment.item.url || canonical.item.id !== attachment.item.id || canonical.item.text !== attachment.item.text || canonical.item.subtitle !== attachment.item.subtitle) {
       throw new Error("Paseo 草稿无法完整保留引用和评论，引用未修改。");
     }
   };

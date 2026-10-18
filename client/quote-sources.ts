@@ -13,7 +13,19 @@ export function captureSource(value: unknown, transcript: HTMLElement): Source |
   return { range, transcript, start: range.startContainer, end: range.endContainer, startOffset: range.startOffset, endOffset: range.endOffset, text: range.toString(), startChild: range.startContainer.childNodes[range.startOffset], endChild: range.endContainer.childNodes[range.endOffset - 1] };
 }
 
+export interface ExternalLiveSource {
+  valid(): boolean;
+  geometry(): SourceGeometry;
+  reveal(): Promise<{ kind: "highlighted" } | { kind: "opened"; reason: string } | { kind: "unavailable"; reason: string }>;
+}
 export class QuoteSources {
+  private external = new Map<string, Map<QuoteId, ExternalLiveSource>>();
+  rememberExternal(scope: string, id: QuoteId, source: ExternalLiveSource): void {
+    let entries = this.external.get(scope);
+    if (!entries) { entries = new Map(); this.external.set(scope, entries); }
+    entries.set(id, source);
+  }
+  externalFor(scope: string, id: QuoteId): ExternalLiveSource | null { return this.external.get(scope)?.get(id) ?? null; }
   private scopes = new Map<string, Map<QuoteId, Source>>();
   remember(scope: string, id: QuoteId, source: Source | null): void {
     if (!source) return;
@@ -34,6 +46,8 @@ export class QuoteSources {
     return source;
   }
   geometry(scope: string, id: QuoteId, card: HTMLElement | null): SourceGeometry {
+    const external = this.externalFor(scope, id);
+    if (external) return external.geometry();
     const source = this.resolve(scope, id);
     if (!source) return { kind: "unavailable" };
     const box = source.transcript.getBoundingClientRect();
@@ -53,10 +67,13 @@ export class QuoteSources {
     return true;
   }
   retain(scope: string, ids: ReadonlySet<QuoteId>): void {
+    const external = this.external.get(scope);
+    for (const id of external?.keys() ?? []) if (!ids.has(id)) external?.delete(id);
+    if (!external?.size) this.external.delete(scope);
     const entries = this.scopes.get(scope);
     if (!entries) return;
     for (const id of entries.keys()) if (!ids.has(id)) entries.delete(id);
     if (!entries.size) this.scopes.delete(scope);
   }
-  dispose(): void { this.scopes.clear(); }
+  dispose(): void { this.scopes.clear(); this.external.clear(); }
 }

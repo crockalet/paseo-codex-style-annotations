@@ -1,10 +1,14 @@
 import { ANNOTATION_ICON as ICON, annotationPalette as palette } from "./annotation-visuals";
 import {
   bindComposer, bindingStatus, discoverDraftHost, makeQuote, mutateQuotes, readQuotes, reason, writeQuoteComment,
-  type ComposerBinding, type DraftHost, type QuoteAttachment, type QuoteRef, type WriteOutcome,
+  bindingElement, bindingCard, isStoreBinding, type DraftBinding, type StoreBinding, type ComposerBinding, type DraftHost, type QuoteAttachment, type QuoteRef, type WriteOutcome,
 } from "./host-draft-bridge";
 import { captureSource, QuoteSources, type SourceGeometry } from "./quote-sources";
 import { decodeAnnotation } from "./format";
+import { decodeExternal, encodeExternal } from "./external-origin";
+import type { AnnotationPreferences } from "./annotation-preferences";
+import type { AnnotationKind } from "../shared/preferences";
+import { discoverSourceHost, type SourceHost, type ExternalOffer, type ExternalSelection } from "./host-source-bridge";
 export type { QuoteRef } from "./host-draft-bridge";
 
 const SOURCE_BADGE_SIZE = 28;
@@ -43,6 +47,8 @@ interface Projection {
 }
 export interface QuoteComposer {
   add(input: { composer: unknown; anchor: unknown; agentId: string; formattedText: string; preview: string; focusComposer?: boolean; sourceRange?: unknown; openComment?: boolean }): Promise<AddResult>;
+  addExternal(offer: ExternalOffer, recipient: StoreBinding): Promise<AddResult>;
+  observeExternal(listener: (selection: ExternalSelection) => void): () => void;
   setComment(ref: QuoteRef, comment: string): Promise<WriteOutcome>;
   dispose(): void;
 }
@@ -51,7 +57,7 @@ export type AddResult =
   | { kind: "uncertain"; ref: QuoteRef; reason: string }
   | Extract<WriteOutcome, { kind: "not-written" }>;
 
-export function installQuoteComposer(options: { discover?: (signal: AbortSignal) => Promise<DraftHost> } = {}): QuoteComposer {
+export function installQuoteComposer(options: { discover?: (signal: AbortSignal) => Promise<DraftHost>; discoverSources?: (signal: AbortSignal) => Promise<SourceHost>; preferences?: AnnotationPreferences } = {}): QuoteComposer {
   const lifetime = new AbortController();
   const sources = new QuoteSources();
   const marker = `quote-${crypto.randomUUID()}`;
@@ -79,11 +85,28 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
   type EditSession = Extract<Editor, { kind: "edit" }>;
   let editor: Editor = { kind: "closed" };
   const decorations = new Map<Projection, Map<QuoteRef["id"], { element: HTMLDivElement; button: HTMLButtonElement; highlights: HTMLDivElement[] }>>();
-  const scopeOf = (binding: ComposerBinding) => host?.key(binding.hostId, binding.agentId) ?? `${binding.hostId}\0${binding.agentId}`;
-  const quotesFor = (binding: ComposerBinding) => host ? readQuotes(host.read(scopeOf(binding))) : [];
-  const sourceFor = (binding: ComposerBinding, id: QuoteRef["id"]) => {
+  const scopeOf = (binding: DraftBinding) => host?.key(binding.hostId, binding.agentId) ?? `${binding.hostId}\0${binding.agentId}`;
+  const quotesFor = (binding: DraftBinding) => host ? readQuotes(host.read(scopeOf(binding))) : [];
+  const sourceFor = (binding: DraftBinding, id: QuoteRef["id"]) => {
     const source = sources.resolve(scopeOf(binding), id);
-    return source?.transcript === binding.anchor ? source : null;
+    return source?.transcript === binding.anchor ? source : sources.externalFor(scopeOf(binding), id);
+  };
+  let sourceHost: SourceHost | null = null;
+  let sourcePromise: Promise<SourceHost> | null = null;
+  const sourceObservers = new Set<() => void>();
+  const getSourceHost = () => sourcePromise ??= (options.discoverSources ?? discoverSourceHost)(lifetime.signal).then((value) => {
+    if (lifetime.signal.aborted) { value.dispose(); throw new Error("注释插件已关闭。"); }
+    sourceHost = value; return value;
+  });
+  const hasLocation = (binding: DraftBinding, id: QuoteRef["id"]) => !!sourceFor(binding, id) || quotesFor(binding).some((quote) => quote.item.id === id && decodeExternal(quote.item).kind === "external");
+  const reveal = async (binding: DraftBinding, id: QuoteRef["id"]) => {
+    const live = sources.externalFor(scopeOf(binding), id);
+    if (live) { const result = await live.reveal(); if (result.kind === "highlighted") return result; }
+    if (sources.resolve(scopeOf(binding), id) && sources.reveal(scopeOf(binding), id)) return { kind: "highlighted" } as const;
+    const item = quotesFor(binding).find((quote) => quote.item.id === id)?.item;
+    const saved = item && decodeExternal(item);
+    if (!saved || saved.kind !== "external") return { kind: "unavailable", reason: "原文位置不可用" } as const;
+    try { return await (await getSourceHost()).reveal(saved.snapshot); } catch (cause) { return { kind: "unavailable", reason: reason(cause) } as const; }
   };
   const pendingFor = (scope: string) => {
     let values = pending.get(scope);
@@ -115,7 +138,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
     const { view } = editor;
     editor = { kind: "closed" };
     view.element.remove();
-    if (focus && bindingStatus(view.ref.binding) === "ready") (view.origin.isConnected ? view.origin : view.ref.binding.input).focus({ preventScroll: true });
+    if (focus && bindingStatus(view.ref.binding) === "ready") (view.origin.isConnected ? view.origin : bindingElement(view.ref.binding)).focus({ preventScroll: true });
   }
   function saveCreateComment(view: EditorView) {
     if (editor.kind !== "create" || editor.view !== view || editor.phase.kind !== "ready" || view.composing) return;
@@ -167,12 +190,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
     if (command.kind === "save") outcome = await setComment(view.ref, command.comment);
     else if (!host) outcome = { kind: "not-written", reason: "草稿接口尚未就绪，注释未删除。", fallback: false };
     else {
-      const absent = !quotesFor(view.ref.binding).some((entry) => entry.item.id === view.ref.id);
       outcome = await mutateQuotes({ host, binding: view.ref.binding, change: { kind: "remove", id: view.ref.id }, isCurrent: () => !lifetime.signal.aborted });
-      if (absent && outcome.kind === "committed") {
-        try { await host.flush(); }
-        catch (cause) { outcome = { kind: "uncertain", reason: reason(cause) }; }
-      }
     }
     if (editor !== session || view.version !== version) return;
     if (bindingStatus(view.ref.binding) === "scope-changed") { closeEditor(false); return; }
@@ -188,7 +206,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
     element.setAttribute("contenteditable", "true");
     element.setAttribute("aria-readonly", "true");
     element.style.cssText = "position:fixed;z-index:2147483646;width:294px;max-width:calc(100vw - 16px)";
-    palette(element, ref.binding.input);
+    palette(element, bindingElement(ref.binding));
     const shadow = element.attachShadow({ mode: "open" });
     const footer = input.kind === "create"
       ? `<button type="button" data-action="finish" aria-label="完成评论"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg></button>`
@@ -307,8 +325,11 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
         source.addEventListener("click", () => {
           const selection = window.getSelection();
           if (selection && !selection.isCollapsed && source.contains(selection.anchorNode)) return;
-          if (sourceFor(current.projection.binding, id) && sources.reveal(scope, id)) { closePreview(false); requestLayout(); }
-          else updatePreview();
+          void reveal(current.projection.binding, id).then((result) => {
+            if (preview !== current) return;
+            if (result.kind === "highlighted") { closePreview(false); requestLayout(); }
+            else current.notice.textContent = result.reason;
+          });
         });
         remove.addEventListener("click", () => {
           if (!host || remove.disabled) return;
@@ -329,14 +350,15 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
         });
       }
       const decoded = decodeAnnotation(attachment.item), unsaved = pending.get(scope)?.get(id);
-      const ordinal = `${index + 1}.`, quote = decoded.kind === "editable" ? decoded.annotation.quote : attachment.item.text;
+      const external = decodeExternal(attachment.item);
+      const ordinal = external.kind === "external" ? `${index + 1}. ${attachment.item.title}` : `${index + 1}.`, quote = external.kind === "external" ? external.snapshot.text : decoded.kind === "editable" ? decoded.annotation.quote : attachment.item.text;
       const comment = unsaved?.comment ?? (decoded.kind === "editable" ? decoded.annotation.comment : "");
       if (row.label.textContent !== ordinal) row.label.textContent = ordinal;
       if (row.text.textContent !== quote) row.text.textContent = quote;
       if (row.comment.textContent !== comment) row.comment.textContent = comment;
       const position = current.container.children[index];
       if (position !== row.element) current.container.insertBefore(row.element, position ?? null);
-      row.source.disabled = !sourceFor(binding, id);
+      row.source.disabled = !hasLocation(binding, id);
       row.source.title = row.source.disabled ? "原文位置不可用" : "定位原文";
       row.status.textContent = unsaved?.kind === "error" ? unsaved.reason : row.source.disabled ? "原文位置不可用" : "";
       row.edit.disabled = decoded.kind !== "editable" || bindingStatus(binding) !== "ready";
@@ -391,8 +413,9 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
       if (tray instanceof HTMLElement && tray.children.length > 0 && Array.from(tray.children).every((child) => child instanceof HTMLElement && hidden.has(child))) hidden.add(tray);
     }
   };
-  function paneBounds(binding: ComposerBinding) {
+  function paneBounds(binding: DraftBinding) {
     const rect = binding.pane.getBoundingClientRect();
+    if (!binding.pane.isConnected || rect.width <= 0 || rect.height <= 0) return { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight };
     return { left: Math.max(0, rect.left), right: Math.min(window.innerWidth, rect.right), top: Math.max(0, rect.top), bottom: Math.min(window.innerHeight, rect.bottom) };
   }
   function place(element: HTMLElement, anchor: DOMRect, bounds: { left: number; right: number; top: number; bottom: number }) {
@@ -415,7 +438,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
       else {
         place(preview.element, preview.projection.button.getBoundingClientRect(), paneBounds(preview.projection.binding));
         for (const [id, row] of preview.rows) {
-          row.source.disabled = !sourceFor(preview.projection.binding, id);
+          row.source.disabled = !hasLocation(preview.projection.binding, id);
           row.source.title = row.source.disabled ? "原文位置不可用" : "定位原文";
         }
         active = true;
@@ -425,12 +448,12 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
       const { view } = editor;
       if (bindingStatus(view.ref.binding) === "scope-changed") closeEditor(false);
       else {
-        const geometry: SourceGeometry = sourceFor(view.ref.binding, view.ref.id) ? sources.geometry(view.scope, view.ref.id, view.ref.binding.card) : { kind: "unavailable" };
-        const projection = projections.get(view.ref.binding.input);
+        const geometry: SourceGeometry = sourceFor(view.ref.binding, view.ref.id) ? sources.geometry(view.scope, view.ref.id, bindingCard(view.ref.binding)) : { kind: "unavailable" };
+        const projection = isStoreBinding(view.ref.binding) ? undefined : projections.get(view.ref.binding.input);
         if (geometry.kind === "visible") {
           place(view.element, geometry.rects[0], geometry.bounds); view.location.textContent = "";
         } else {
-          place(view.element, (projection?.button ?? view.ref.binding.input).getBoundingClientRect(), paneBounds(view.ref.binding));
+          place(view.element, (projection?.button ?? bindingElement(view.ref.binding)).getBoundingClientRect(), paneBounds(view.ref.binding));
           view.location.textContent = geometry.kind === "offscreen" ? "原文在可视区域外" : "原文位置不可用";
         }
         active = true;
@@ -569,38 +592,78 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
     if (lifetime.signal.aborted) return { kind: "unavailable", reason: "引用插件已关闭。" };
     host = discovered; unsubscribe = host.subscribe(schedule); schedule(); return { kind: "ready", host: discovered };
   }).catch((cause: unknown): Capability => ({ kind: "unavailable", reason: reason(cause) }));
-  return {
-    async add(input) {
-      const binding = bindComposer(input.composer, input.anchor, input.agentId);
-      if (!binding) return { kind: "not-written", reason: "无法确定当前输入框，引用未添加。", fallback: false };
-      const attachment = makeQuote(input.formattedText, input.preview, window.location.href), ref = { id: attachment.item.id, binding };
-      const source = captureSource(input.sourceRange, binding.anchor);
-      const view = input.openComment ? createEditor(ref, binding.input, { kind: "create", comment: "" }) : null;
-      if (view) { editor = { kind: "create", view, phase: { kind: "adding" }, finishRequested: null }; view.field.focus({ preventScroll: true }); requestLayout(); }
-      const perform = async (): Promise<AddResult> => {
-        const capability = await ready;
-        if (lifetime.signal.aborted || bindingStatus(binding) !== "ready") return { kind: "not-written", reason: "输入框已锁定或会话已切换。", fallback: false };
-        if (capability.kind === "ready") {
-          sources.remember(scopeOf(binding), ref.id, source);
-          if (view) view.scope = scopeOf(binding);
-        }
-        const outcome = capability.kind === "unavailable" ? { kind: "not-written", reason: capability.reason, fallback: true } satisfies WriteOutcome
-          : await mutateQuotes({ host: capability.host, binding, change: { kind: "add", attachment }, isCurrent: () => !lifetime.signal.aborted });
-        if (outcome.kind !== "not-written") sources.remember(scopeOf(binding), ref.id, source);
+  const externalAdds = new WeakMap<ExternalOffer, { recipient: StoreBinding; promise: Promise<AddResult> }>();
+  function addPrepared(binding: DraftBinding, attachment: QuoteAttachment, prepare: () => Promise<QuoteAttachment>, input: { annotationKind: Promise<AnnotationKind>; openComment: boolean; focusComposer: boolean; valid: () => boolean; remember: (scope: string) => void }): Promise<AddResult> {
+    const ref: QuoteRef = { id: attachment.item.id, binding };
+    const view = input.openComment ? createEditor(ref, bindingElement(binding), { kind: "create", comment: "" }) : null;
+    if (view) { editor = { kind: "create", view, phase: { kind: "adding" }, finishRequested: null }; view.field.focus({ preventScroll: true }); requestLayout(); }
+    let inFlight: Promise<AddResult> | null = null;
+    const perform = (): Promise<AddResult> => {
+      if (inFlight) return inFlight;
+      inFlight = (async () => {
+        let outcome: WriteOutcome;
+        try {
+          const [capability, prepared, kind] = await Promise.all([ready, prepare(), input.annotationKind]);
+          const policy = await options.preferences?.check(kind);
+          if (policy && !policy.allowed) outcome = { kind: "not-written", reason: policy.reason, fallback: false };
+          else if (lifetime.signal.aborted || bindingStatus(binding) !== "ready" || !input.valid()) outcome = { kind: "not-written", reason: "原文或接收对话已切换，注释未添加。", fallback: false };
+          else if (capability.kind === "unavailable") outcome = { kind: "not-written", reason: capability.reason, fallback: !isStoreBinding(binding) };
+          else {
+            input.remember(scopeOf(binding));
+            if (view) view.scope = scopeOf(binding);
+            outcome = await mutateQuotes({ host: capability.host, binding, change: { kind: "add", attachment: prepared }, isCurrent: () => !lifetime.signal.aborted && input.valid() && (!options.preferences || options.preferences.enabled(kind)) });
+            if (outcome.kind !== "not-written") input.remember(scopeOf(binding));
+          }
+        } catch (cause) { outcome = { kind: "not-written", reason: reason(cause), fallback: false }; }
         if (view && editor.kind === "create" && editor.view === view && bindingStatus(binding) === "ready") {
           view.scope = scopeOf(binding);
-          if (outcome.kind === "not-written" || (outcome.kind === "uncertain" && !quotesFor(binding).some((entry) => entry.item.id === ref.id))) { editor.phase = { kind: "add-error", retry: () => { if (editor.kind === "create" && editor.view === view) { editor.phase = { kind: "adding" }; void perform(); } } }; view.status.textContent = outcome.reason; view.retry.hidden = false; }
-          else { editor.phase = { kind: "ready" }; view.status.textContent = outcome.kind === "uncertain" ? outcome.reason : ""; if (view.field.value) saveCreateComment(view); else if (editor.finishRequested) closeEditor(editor.finishRequested.focus); }
+          if (outcome.kind === "not-written" || (outcome.kind === "uncertain" && !quotesFor(binding).some((entry) => entry.item.id === ref.id))) {
+            editor.phase = { kind: "add-error", retry: () => { if (editor.kind === "create" && editor.view === view) { editor.phase = { kind: "adding" }; void perform(); } } }; view.status.textContent = outcome.reason; view.retry.hidden = false;
+          } else { editor.phase = { kind: "ready" }; view.status.textContent = outcome.kind === "uncertain" ? outcome.reason : ""; if (view.field.value) saveCreateComment(view); else if (editor.finishRequested) closeEditor(editor.finishRequested.focus); }
         } else if (view?.field.value && outcome.kind !== "not-written" && bindingStatus(binding) === "ready") void setComment(ref, view.field.value);
-        if (!view && outcome.kind === "committed" && input.focusComposer !== false && bindingStatus(binding) === "ready") binding.input.focus({ preventScroll: true });
+        if (!view && outcome.kind === "committed" && input.focusComposer && bindingStatus(binding) === "ready") bindingElement(binding).focus({ preventScroll: true });
         schedule();
         return outcome.kind === "not-written" ? outcome : { ...outcome, ref };
-      };
-      return perform();
+      })().finally(() => { inFlight = null; });
+      return inFlight;
+    };
+    return perform();
+  }
+  return {
+    add(input) {
+      const binding = bindComposer(input.composer, input.anchor, input.agentId);
+      if (!binding) return Promise.resolve({ kind: "not-written", reason: "无法确定当前输入框，引用未添加。", fallback: false });
+      const attachment = makeQuote(input.formattedText, input.preview, window.location.href), source = captureSource(input.sourceRange, binding.anchor);
+      return addPrepared(binding, attachment, async () => attachment, { annotationKind: Promise.resolve("chat"), openComment: input.openComment ?? false, focusComposer: input.focusComposer !== false, valid: () => true, remember: (scope) => sources.remember(scope, attachment.item.id, source) });
+    },
+    addExternal(offer, recipient) {
+      const previous = externalAdds.get(offer);
+      if (previous) return previous.recipient === recipient ? previous.promise : Promise.resolve({ kind: "not-written", reason: "此选区已指定接收对话，请重新选择原文。", fallback: false });
+      if (!offer.recipients.includes(recipient) || !offer.validForAdd() || !recipient.validate()) return Promise.resolve({ kind: "not-written", reason: "原文或接收对话已变化。", fallback: false });
+      const sourceUrl = window.location.href, attachment = makeQuote("", offer.label, sourceUrl);
+      const prepared = offer.snapshot.then((snapshot) => { const encoded = encodeExternal(snapshot, sourceUrl); return { ...attachment, item: { ...attachment.item, title: snapshot.title.slice(0, 128), url: encoded.url, text: encoded.text } }; });
+      const promise = addPrepared(recipient, attachment, () => prepared, { annotationKind: offer.snapshot.then((snapshot) => snapshot.origin.kind), openComment: true, focusComposer: false, valid: offer.validForAdd, remember: (scope) => sources.rememberExternal(scope, attachment.item.id, offer.source) });
+      externalAdds.set(offer, { recipient, promise }); return promise;
+    },
+    observeExternal(listener) {
+      let stop = () => {}, active = true;
+      const cleanup = () => { active = false; stop(); sourceObservers.delete(cleanup); };
+      sourceObservers.add(cleanup);
+      void getSourceHost().then((host) => { if (active) stop = host.observe(listener); }).catch((cause) => {
+        if (!active) return;
+        const unavailable = (event: Event) => {
+          const element = event.target instanceof Element ? event.target : null;
+          const root = element?.closest<HTMLElement>('[data-testid="workspace-file-pane"],[data-testid="git-diff-canvas-root"],[data-testid="terminal-surface"]');
+          if (root && root.getClientRects().length) listener({ kind: "unavailable", root, reason: reason(cause) });
+        };
+        document.addEventListener("pointerup", unavailable, true); document.addEventListener("keyup", unavailable, true);
+        stop = () => { document.removeEventListener("pointerup", unavailable, true); document.removeEventListener("keyup", unavailable, true); };
+      });
+      return cleanup;
     },
     setComment,
     dispose() {
-      lifetime.abort(); unsubscribe(); observer.disconnect();
+      lifetime.abort(); unsubscribe(); observer.disconnect(); for (const cleanup of sourceObservers) cleanup(); sourceHost?.dispose();
       window.cancelAnimationFrame(frame); window.clearTimeout(closeTimer);
       document.removeEventListener("pointerdown", outside, true); window.removeEventListener("resize", viewport); window.removeEventListener("scroll", requestLayout, true);
       closeEditor(false); closePreview(false);

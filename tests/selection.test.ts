@@ -6,20 +6,25 @@ import { build } from "esbuild";
 import { z } from "zod";
 import { installQuoteComposer } from "../client/quote-composer";
 import { readQuotes, type DraftHost } from "../client/host-draft-bridge";
+import type { SourceHost, ExternalSelection, ExternalOffer } from "../client/host-source-bridge";
+import { createAnnotationPreferences } from "../client/annotation-preferences";
+import type { AnnotationPreferences } from "../client/annotation-preferences";
+import type { StoreBinding } from "../client/host-draft-bridge";
+import { fingerprint } from "../client/external-origin";
 import { nativeHost } from "./native-host";
 import { setup, settle } from "./dom";
 
 const bundled = build({ entryPoints: [new URL("../client/web.ts", import.meta.url).pathname], bundle: true, write: false, platform: "node", format: "cjs", external: ["react-native", "./quote-composer"] });
-async function selectionBar(host: DraftHost) {
+async function selectionBar(host: DraftHost, sources?: SourceHost) {
   const result = await bundled;
   const module = { exports: {} };
   const nativeRequire = createRequire(import.meta.url);
   compileFunction(result.outputFiles[0].text, ["require", "module", "exports"])((name: string) => {
     if (name === "react-native") return { Platform: { OS: "web" } };
-    if (name === "./quote-composer") return { installQuoteComposer: () => installQuoteComposer({ discover: async () => host }) };
+    if (name === "./quote-composer") return { installQuoteComposer: (options: { preferences?: AnnotationPreferences } = {}) => installQuoteComposer({ ...options, discover: async () => host, ...(sources ? { discoverSources: async () => sources } : {}) }) };
     return nativeRequire(name);
   }, module, module.exports);
-  return z.object({ installSelectionBar: z.custom<(client: { paseo: unknown; openPanel: (...args: unknown[]) => void }) => () => void>((value) => typeof value === "function") }).parse(module.exports).installSelectionBar;
+  return z.object({ installSelectionBar: z.custom<(client: { paseo: unknown; openPanel: (...args: unknown[]) => void }, preferences?: AnnotationPreferences) => () => void>((value) => typeof value === "function") }).parse(module.exports).installSelectionBar;
 }
 
 test("两文字入口立即添加、紧凑可选评论、连续输入，Enter/Esc/IME 不发送 Agent", async () => {
@@ -210,4 +215,44 @@ test("选区按钮的 Escape 不打断 Agent，失焦和 Escape 完成后保留�
   cleanup();
   await host.flush();
   dom.window.close();
+});
+
+
+test("external toolbar requires an explicit same-workspace receiver, freezes its selection, and writes without a composer", async () => {
+  const { host } = await nativeHost(), { dom, anchor, binding } = setup();
+  document.querySelector('[data-testid="message-input-root"]')?.remove();
+  let receive: (selection: ExternalSelection) => void = () => {}, observations = 0;
+  const sources: SourceHost = { capture: () => null, observe(listener) { receive = listener; observations++; return () => { observations--; }; }, reveal: async () => ({ kind: "unavailable", reason: "fixture" }), dispose() {} };
+  const cleanup = (await selectionBar(host, sources))({ paseo: {}, openPanel() {} });
+  try {
+    await settle();
+    const recipient = (agentId: string): StoreBinding => ({ kind: "store", hostId: binding.hostId, agentId, draftKey: host.key(binding.hostId, agentId), anchor, pane: binding.pane, label: agentId === "agent-one" ? "First chat" : "Second chat", validate: () => window.location.pathname === binding.workspacePath });
+    const first = recipient("agent-one"), second = recipient("agent-two");
+    const selected: ExternalOffer = { root: anchor, label: "file", recipients: [first, second], preferred: null, validForAdd: () => true,
+      snapshot: Promise.resolve({ text: "  exact selected text\t\n", title: "a.ts:2", origin: { kind: "file", workspace: { serverId: binding.hostId, workspaceId: "workspace-one", workspaceKey: "fixture-host:workspace-one", root: "/work" }, tabId: "file", file: { requestedPath: "a.ts", absolutePath: "/work/a.ts", relativePath: "a.ts" }, from: 4, to: 15, lineStart: 2, lineEnd: 2, version: await fingerprint("document") } }),
+      source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
+    receive({ kind: "offer", offer: selected });
+    const toolbar = document.querySelector('[data-paseo-quote]'), shadow = toolbar?.shadowRoot, add = shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]'), chooser = shadow?.querySelector<HTMLSelectElement>('select[data-receiver]');
+    assert.ok(add && chooser); assert.equal(add.disabled, true); assert.equal(chooser.value, ""); assert.deepEqual(Array.from(chooser.options).map((option) => option.textContent), ["选择接收对话", "First chat", "Second chat"]);
+    assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="side"]')?.hidden, true);
+    chooser.value = "1"; chooser.dispatchEvent(new dom.window.Event("change", { bubbles: true })); assert.equal(add.disabled, false);
+    anchor.textContent = "changed after toolbar focus"; add.click(); await settle(); await settle();
+    assert.equal(readQuotes(host.read(first.draftKey)).length, 0); const quotes = readQuotes(host.read(second.draftKey)); assert.equal(quotes.length, 1); assert.equal(quotes[0].item.text.endsWith("  exact selected text\t\n"), true);
+    receive({ kind: "offer", offer: selected }); assert.equal(toolbar?.getAttribute("style")?.includes("display: none"), true, "viewport updates cannot reoffer an already consumed selection");
+  } finally { cleanup(); assert.equal(observations, 0); await host.flush(); dom.window.close(); }
+});
+
+
+test("disabling chat Add leaves the existing chat side-question action available", async () => {
+  const { host } = await nativeHost(), { dom, anchor } = setup();
+  const preferences = createAnnotationPreferences({ async rpc(contract) { return contract.output.parse({ status: "ready", revision: "disabled-chat", values: { chat: false } }); } }); await preferences.refresh();
+  const cleanup = (await selectionBar(host))({ paseo: {}, openPanel() {} }, preferences);
+  try {
+    const rect = new dom.window.DOMRect(100, 100, 100, 20); dom.window.Range.prototype.getClientRects = () => Object.assign([rect], { item: () => rect }); dom.window.Range.prototype.getBoundingClientRect = () => rect;
+    const range = document.createRange(); range.selectNodeContents(anchor); dom.window.getSelection()?.addRange(range); anchor.dispatchEvent(new dom.window.Event("pointerup", { bubbles: true })); await settle();
+    const shadow = document.querySelector('[data-paseo-quote]')?.shadowRoot;
+    assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]')?.disabled, true);
+    assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="side"]')?.disabled, false);
+    assert.match(shadow?.querySelector('.selection-status')?.textContent ?? "", /已关闭/);
+  } finally { cleanup(); preferences.dispose(); await host.flush(); dom.window.close(); }
 });

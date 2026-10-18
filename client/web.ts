@@ -4,6 +4,10 @@ import { startSideChat } from "./actions";
 import { formatQuote, type QuoteSource } from "./format";
 import { installSentQuotes } from "./sent-quotes";
 import { installQuoteComposer } from "./quote-composer";
+import type { ExternalOffer, ExternalSelection } from "./host-source-bridge";
+import type { AnnotationPreferences } from "./annotation-preferences";
+import type { AnnotationKind } from "../shared/preferences";
+import type { StoreBinding } from "./host-draft-bridge";
 
 /*
  * Web and desktop only. iOS and Android route selection through the platform
@@ -112,6 +116,7 @@ interface DomElement extends DomNode {
   focus(options?: { preventScroll?: boolean }): void;
 }
 
+interface DomSelect extends DomElement { value: string; disabled: boolean; }
 interface DomButton extends DomElement {
   disabled: boolean;
 }
@@ -163,7 +168,7 @@ declare const window: DomEventTarget & {
 declare const document: DomEventTarget & {
   readonly body: DomElement;
   readonly activeElement: DomElement | null;
-  createElement(tag: "div"): DomElement;
+  createElement(tag: "div" | "option"): DomElement;
   createElement(tag: "textarea"): DomTextArea;
   execCommand(command: "insertText", showUi: boolean, value: string): boolean;
 };
@@ -361,11 +366,13 @@ button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:.
 .panel[data-mode="side"] .quote{display:block}
 .footer{display:flex;align-items:center;justify-content:flex-end;gap:2px}.status{flex:1 1 auto;font-size:11px;color:var(--pq-muted);overflow-wrap:anywhere;padding:0 5px}.status:empty{display:none}
 .primary{background:var(--pq-fg);color:var(--pq-primary-fg)}
+.source-label,.selection-status{max-width:240px;overflow:hidden;text-overflow:ellipsis;font-size:11px;padding:0 5px;color:var(--pq-muted)}select{font:inherit;color:inherit;background:var(--pq-bg);border:1px solid var(--pq-border);border-radius:6px;max-width:180px;padding:3px} [hidden]{display:none!important}
 `;
 const MARKUP = `
 <style>${STYLE}</style>
 <div class="panel" data-mode="bar" contenteditable="false">
  <div class="bar" role="toolbar" aria-label="选中文字">
+  <span class="source-label" hidden></span><select data-receiver aria-label="接收对话" hidden></select><span class="selection-status" role="status" hidden></span>
   <button data-action="quote">添加到对话</button>
   <button data-action="side">在侧边聊天中提问</button>
  </div>
@@ -377,6 +384,7 @@ const MARKUP = `
 
 type Interaction =
  | { kind: "hidden" }
+ | { kind: "external"; selection: NonNullable<ExternalSelection>; recipient: StoreBinding | null }
  | { kind: "selection"; snapshot: Snapshot }
  | { kind: "side"; snapshot: Snapshot; status: "editing" | "sending" };
 const GAP = 8;
@@ -385,9 +393,9 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Installs the selection bar. Returns cleanup; a no-op off the web. */
-export function installSelectionBar(client: PluginClientContext): () => void {
+export function installSelectionBar(client: PluginClientContext, preferences?: AnnotationPreferences): () => void {
  if (Platform.OS !== "web" || typeof document === "undefined") return () => {};
- const quotes = installQuoteComposer();
+ const quotes = installQuoteComposer({ preferences });
  const removeSentQuotes = installSentQuotes();
  const host = document.createElement("div");
  host.setAttribute("data-paseo-quote", "");
@@ -399,6 +407,9 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const panel = shadow.querySelector(".panel")!;
  const quotePreview = shadow.querySelector(".quote")!;
  const status = shadow.querySelector(".status")!;
+ const sourceLabel = shadow.querySelector(".source-label")!;
+ const selectionStatus = shadow.querySelector(".selection-status")!;
+ const receiver = shadow.querySelector("select[data-receiver]") as DomSelect;
  const button = (action: string) => shadow.querySelector(`[data-action="${action}"]`) as DomButton;
  const field = document.createElement("textarea");
  field.setAttribute("slot", "input");
@@ -416,6 +427,8 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  let pending = 0;
  let disposed = false;
  let composing = false;
+ let consumedOffer: ExternalOffer | null = null;
+ let externalKind: AnnotationKind | null = null;
 
  const place = (anchor: DomRect, prefer: "above" | "below") => {
   const width = panel.offsetWidth;
@@ -432,6 +445,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const hide = () => { interaction = { kind: "hidden" }; host.style.setProperty("display", "none", "important"); };
  const showBar = (snapshot: Snapshot) => {
   interaction = { kind: "selection", snapshot };
+  sourceLabel.hidden = true; selectionStatus.hidden = true; receiver.hidden = true; button("side").hidden = false;
   panel.setAttribute("data-mode", "bar");
   host.setAttribute("contenteditable", "true");
   button("quote").disabled = !snapshot.composer || !snapshot.agentId;
@@ -439,8 +453,63 @@ export function installSelectionBar(client: PluginClientContext): () => void {
   applyPalette(host, snapshot.anchor);
   host.style.setProperty("display", "block", "important");
   place(snapshot.first, "above");
+  updatePolicy(); void preferences?.refresh();
  };
+ const showExternal = (selection: NonNullable<ExternalSelection>) => {
+  if (interaction.kind === "side") return;
+  const previous = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer.root === selection.offer.root ? interaction.recipient : null;
+  const candidates = selection.kind === "offer" ? selection.offer.recipients : [];
+  const recipient = previous ? candidates.find((item) => item.hostId === previous.hostId && item.agentId === previous.agentId && item.draftKey === previous.draftKey) ?? null : selection.kind === "offer" ? selection.offer.preferred : null;
+  const sameOffer = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer === selection.offer;
+  interaction = { kind: "external", selection, recipient };
+  if (!sameOffer) externalKind = null;
+  panel.setAttribute("data-mode", "bar"); button("side").hidden = true; sourceLabel.hidden = false;
+  sourceLabel.textContent = selection.kind === "offer" ? selection.offer.label === "file" ? "文件原文" : selection.offer.label === "commit_diff" || selection.offer.label === "working_diff" || selection.offer.label === "changes_tree" ? "Diff 原文" : "终端输出" : "原文选择";
+  selectionStatus.hidden = selection.kind === "offer" && candidates.length > 0;
+  selectionStatus.textContent = selection.kind === "unavailable" ? selection.reason : candidates.length ? "" : "没有同工作区的接收对话";
+  receiver.hidden = !candidates.length; receiver.innerHTML = "";
+  const placeholder = document.createElement("option"); placeholder.setAttribute("value", ""); placeholder.textContent = "选择接收对话"; receiver.appendChild(placeholder);
+  candidates.forEach((candidate, i) => { const option = document.createElement("option"); option.setAttribute("value", String(i)); option.textContent = candidate.label; receiver.appendChild(option); });
+  receiver.value = recipient ? String(candidates.indexOf(recipient)) : ""; button("quote").disabled = !recipient;
+  const root = selection.kind === "offer" ? selection.offer.root : selection.root;
+  applyPalette(host, root as unknown as DomElement); host.style.setProperty("display", "block", "important");
+  const geometry = selection.kind === "offer" ? selection.offer.source.geometry() : null;
+  place(geometry?.kind === "visible" ? geometry.rects[0] : root.getBoundingClientRect(), "above");
+  updatePolicy();
+  if (selection.kind === "offer" && !sameOffer) {
+   void selection.offer.snapshot.then((snapshot) => { if (interaction.kind === "external" && interaction.selection === selection) { externalKind = snapshot.origin.kind; sourceLabel.textContent = ({ file: "文件原文", markdown: "Markdown 预览", diff: "Diff 原文", terminal: "终端输出" })[snapshot.origin.kind]; updatePolicy(); } }).catch((cause) => { if (interaction.kind === "external" && interaction.selection === selection) { selectionStatus.hidden = false; selectionStatus.textContent = cause instanceof Error ? cause.message : String(cause); button("quote").disabled = true; } });
+   void preferences?.refresh();
+  }
+ };
+ const changeReceiver: DomListener = () => {
+  if (interaction.kind !== "external" || interaction.selection.kind !== "offer") return;
+  interaction = { ...interaction, recipient: receiver.value === "" ? null : interaction.selection.offer.recipients[Number(receiver.value)] ?? null };
+  button("quote").disabled = !interaction.recipient; updatePolicy();
+ };
+ receiver.addEventListener("change", changeReceiver);
+ const updatePolicy = () => {
+  if (!preferences || interaction.kind === "hidden" || interaction.kind === "side") return;
+  const kind = interaction.kind === "selection" ? "chat" : externalKind;
+  const state = preferences.state();
+  const enabled = kind !== null && preferences.enabled(kind);
+  if (!enabled) button("quote").disabled = true;
+  const problem = state.status === "error" ? `注释设置读取失败：${state.error}` : state.status === "loading" ? "正在读取注释设置…" : kind && !enabled ? "此类注释已关闭，可在插件设置中开启" : "";
+  if (problem) { selectionStatus.textContent = problem; selectionStatus.hidden = false; }
+  else if (interaction.kind === "selection") { selectionStatus.hidden = true; button("quote").disabled = !interaction.snapshot.composer || !interaction.snapshot.agentId; }
+  else if (interaction.selection.kind === "offer") { selectionStatus.hidden = interaction.selection.offer.recipients.length > 0; button("quote").disabled = !interaction.recipient || !enabled; }
+ };
+ const stopPolicy = preferences?.subscribe(updatePolicy) ?? (() => {});
+ const stopExternal = quotes.observeExternal((selection) => {
+  if (disposed || interaction.kind === "side") return;
+  if (selection?.kind === "offer" && selection.offer === consumedOffer) return;
+  if (selection) showExternal(selection); else if (interaction.kind === "external") hide();
+ });
  const quote = () => {
+  if (interaction.kind === "external") {
+   const current = interaction;
+   if (current.selection.kind !== "offer" || !current.recipient) return;
+   consumedOffer = current.selection.offer; hide(); void quotes.addExternal(current.selection.offer, current.recipient); return;
+  }
   if (interaction.kind !== "selection") return;
   const snapshot = interaction.snapshot;
   if (!snapshot.composer || !snapshot.agentId) return;
@@ -488,7 +557,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
   });
  };
  const actions: Record<string, () => void> = { quote, side: openSide, cancel: hide, ask: askSide };
- const onPanelPointerDown: DomListener = (event) => { if (event.target !== field) event.preventDefault(); };
+ const onPanelPointerDown: DomListener = (event) => { if (event.target !== field && event.target !== receiver) event.preventDefault(); };
  const onPanelClick: DomListener = (event) => {
   const target = elementOf(event.target)?.closest("button[data-action]") as DomButton | null;
   const action = target?.getAttribute("data-action");
@@ -509,7 +578,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const onHostKeyDown: DomListener = (raw) => {
   const event = raw as DomKeyboardEvent;
   if (event.target === field || composing || event.isComposing || event.keyCode === 229 || event.key !== "Escape") return;
-  if (interaction.kind === "selection") { event.preventDefault(); event.stopPropagation(); hide(); }
+  if (interaction.kind === "selection" || interaction.kind === "external") { event.preventDefault(); event.stopPropagation(); hide(); }
  };
  const onCompositionStart: DomListener = () => { composing = true; };
  const onCompositionEnd: DomListener = () => { composing = false; };
@@ -542,7 +611,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  window.addEventListener("resize", onViewportChange);
  return () => {
   disposed = true;
-  quotes.dispose();
+  stopPolicy(); stopExternal(); receiver.removeEventListener("change", changeReceiver); quotes.dispose();
   removeSentQuotes();
   window.clearTimeout(pending);
   document.removeEventListener("pointerdown", onPointerDown, true);
