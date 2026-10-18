@@ -25,7 +25,7 @@ try {
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.route("http://localhost/**", (route) => route.fulfill({ contentType: route.request().url().endsWith("/bundle.js") ? "text/javascript" : "text/html", body: route.request().url().endsWith("/bundle.js") ? registry : '<!doctype html><html><head><style>html,body{margin:0}#fixture{display:flex;flex-wrap:wrap}.panel{width:600px;height:350px;display:flex;flex-direction:column}.panel>div{flex:1;min-height:0;display:flex;flex-direction:column}[data-testid="workspace-file-pane"]{height:200px}[data-testid="file-source-editor"]{height:180px}</style></head><body><main id="fixture"><div class="panel" id="diff-one"></div><div class="panel" id="diff-two"></div><div class="panel" id="file"></div><div class="panel" id="markdown"></div><div class="panel" id="terminal-one"></div><div class="panel" id="terminal-two"></div></main><script src="/bundle.js"><\/script></body></html>' }));
   await page.addInitScript(() => {
-    const registry2 = /* @__PURE__ */ new Map(), cache = /* @__PURE__ */ new Map(), overrides = /* @__PURE__ */ new Map();
+    const registry2 = new Map(), cache = new Map(), overrides = new Map();
     window.__d = (factory, id, deps) => registry2.set(id, { factory, deps });
     window.__r = (id) => {
       if (overrides.has(id)) return overrides.get(id);
@@ -47,12 +47,12 @@ try {
     window.__ids = Bridge.resolveModuleIds(source2, Bridge.SOURCE_MODULE_SIGNATURES);
   }, source);
   await page.evaluate(() => {
-    const r = window.__r, o = window.__overrides, ids = window.__ids, React = r(37), DOM = r(388), View = ({ children, style, testID, ...props }) => React.createElement("div", { "data-testid": testID, style: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0, ...Array.isArray(style) ? Object.assign({}, ...style) : style } }, children), wrap = (p) => React.createElement(React.Fragment, null, p.children), never = () => {
+    const r = window.__r, o = window.__overrides, ids = window.__ids, React = r(37), DOM = r(388), ScrollView = r(184).default, View = ({ children, style, testID, ...props }) => React.createElement("div", { "data-testid": testID, style: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0, ...Array.isArray(style) ? Object.assign({}, ...style) : style } }, children), wrap = (p) => React.createElement(React.Fragment, null, p.children), never = () => {
       throw Error("Forbidden fixture boundary");
     };
-    const session = { agents: /* @__PURE__ */ new Map([["agent-one", { workspaceId: "workspace-one", title: "First chat" }], ["agent-two", { workspaceId: "workspace-one", title: "Second chat" }], ["foreign-agent", { workspaceId: "workspace-two", title: "Wrong workspace" }]]), agentDetails: /* @__PURE__ */ new Map(), workspaces: /* @__PURE__ */ new Map([["workspace-one", { id: "workspace-one", workspaceDirectory: "/work/fixture" }], ["workspace-two", { id: "workspace-two", workspaceDirectory: "/other" }]]), serverInfo: { features: {} } };
+    const session = { agents: new Map([["agent-one", { workspaceId: "workspace-one", title: "First chat" }], ["agent-two", { workspaceId: "workspace-one", title: "Second chat" }], ["foreign-agent", { workspaceId: "workspace-two", title: "Wrong workspace" }]]), agentDetails: new Map(), workspaces: new Map([["workspace-one", { id: "workspace-one", workspaceDirectory: "/work/fixture" }], ["workspace-two", { id: "workspace-two", workspaceDirectory: "/other" }]]), serverInfo: { features: {} } };
     const sessionState = { sessions: { "fixture-host": session }, setFocusedTerminalId: () => {
-    } }, listeners = /* @__PURE__ */ new Set(), sessionStore = Object.assign((selector) => selector(sessionState), { getState: () => sessionState, subscribe: (fn) => {
+    } }, listeners = new Set(), sessionStore = Object.assign((selector) => selector(sessionState), { getState: () => sessionState, subscribe: (fn) => {
       listeners.add(fn);
       return () => listeners.delete(fn);
     } });
@@ -141,13 +141,19 @@ try {
       const root = DOM.createRoot(document.getElementById(tab.tabId)), context = { serverId: "fixture-host", workspaceId: "workspace-one", tabId: tab.tabId, target: tab.target };
       let child;
       if (tab.tabId.startsWith("diff")) {
-        const props = { files: [makeFile(tab.tabId + "/a.ts"), makeFile(tab.tabId + "/b.ts")], collapsedFilePaths: /* @__PURE__ */ new Set(), displayPreferences: { layout: "split", wrapLines: false, codeFontSize: 14, monoFontFamily: "monospace" }, palette, headerTypography: { family: "sans-serif", size: 12, statSize: 11 }, mode: { kind: "commit" }, onToggleFile: never, onSelectPath: never, selectedPath: null };
+        const props = { files: [makeFile(tab.tabId + "/a.ts"), makeFile(tab.tabId + "/b.ts")], collapsedFilePaths: new Set(), displayPreferences: { layout: "split", wrapLines: false, codeFontSize: 14, monoFontFamily: "monospace" }, palette, headerTypography: { family: "sans-serif", size: 12, statSize: 11 }, mode: { kind: "commit" }, onToggleFile: never, onSelectPath: never, selectedPath: null };
         window.__test.diffProps[tab.tabId] = props;
         window.__test.diffRoots[tab.tabId] = root;
         child = React.createElement(Cache, null, React.createElement(Surface, props));
       } else if (tab.tabId.startsWith("terminal")) child = React.createElement(r(5162).TerminalPane, { serverId: "fixture-host", cwd: "/work/fixture", terminalId: tab.tabId, isWorkspaceFocused: false, isPaneFocused: false, onOpenFileExplorer: never, onOpenWorkspaceFile: never });
       else if (tab.tabId === "file") child = React.createElement(CodeFixture);
-      else child = React.createElement("div", { "data-testid": "workspace-file-pane" }, React.createElement("div", { "data-testid": "markdown-preview-frame" }, React.createElement("table", null, React.createElement("tbody", null, React.createElement("tr", null, React.createElement("td", null, "title"), React.createElement("td", null, "Rendered front matter")))), React.createElement("p", null, "Markdown selected  text\n\u5C3E  ")));
+      else child = React.createElement("div", { "data-testid": "workspace-file-pane", style: { overflow: "hidden" } },
+        React.createElement(ScrollView, { testID: "markdown-scroll-viewport", style: { height: 200, flexGrow: 0, flexShrink: 0 } },
+          React.createElement("div", null,
+            React.createElement("div", { "data-testid": "markdown-preview-frame" },
+              React.createElement("table", null, React.createElement("tbody", null, React.createElement("tr", null, React.createElement("td", null, "title"), React.createElement("td", null, "Rendered front matter")))),
+              React.createElement("p", null, "Markdown selected  text\n\u5C3E  "),
+              ...Array.from({ length: 50 }, (_, index) => React.createElement("p", { key: index }, "Markdown paragraph " + index))))));
       root.render(React.createElement(PaneProvider, { value: context }, child));
       window.__test.roots.push(root);
     }
@@ -168,7 +174,7 @@ try {
     o.set(3778, { confirmDialog: never });
     o.set(4480, { PaneContentToolbar: wrap, ToolbarButton: empty, ToolbarControls: wrap, paneContentToolbarTrailingPadding: () => 0, paneContentToolbarIconButtonStyle: () => ({}), paneContentToolbarIconSize: () => 14 });
     o.set(3861, {});
-    const actions = { commentsByTarget: /* @__PURE__ */ new Map(), editor: null, sheetEditor: null, onStartComment: () => {
+    const actions = { commentsByTarget: new Map(), editor: null, sheetEditor: null, onStartComment: () => {
     }, onChangeEditorBody: () => {
     } }, feedback = { clearance: 0, model: null, state: null }, workingFiles = [makeFile("working/a.ts")], query = { files: workingFiles, payloadError: null, diffTooLarge: false, isLoading: false };
     Object.assign(o.get(4699), { ReviewFeedbackAction: empty, ReviewCommentSheet: empty, buildReviewDraftKey: () => "fixture-review", useInlineReviewController: () => actions, useReviewAttachmentSnapshot: () => null, useReviewFeedback: () => feedback });
@@ -179,7 +185,7 @@ try {
     const workingHook = r(5221);
     o.set(5221, { ...workingHook, usePublishWorkingDiffAttachment: () => {
     } });
-    o.set(5024, { DiffDocument: (props) => React.createElement(Cache, null, React.createElement(Surface, { ...props, palette, headerTypography: { family: "sans-serif", size: 12, statSize: 11 }, collapsedFilePaths: /* @__PURE__ */ new Set(), onToggleFile: never, onSelectPath: never, selectedPath: null })) });
+    o.set(5024, { DiffDocument: (props) => React.createElement(Cache, null, React.createElement(Surface, { ...props, palette, headerTypography: { family: "sans-serif", size: 12, statSize: 11 }, collapsedFilePaths: new Set(), onToggleFile: never, onSelectPath: never, selectedPath: null })) });
     const layoutStore = Object.assign((selector) => selector({ openTab: never }), { getState: () => layoutState, subscribe: () => () => {
     } });
     o.set(ids.layout, { ...o.get(ids.layout), useWorkspaceLayoutStore: layoutStore });
@@ -218,11 +224,28 @@ try {
     getSelection().addRange(range);
     const result2 = window.__host.capture(text.parentElement);
     if (result2?.kind !== "offer") return result2;
-    return { snapshot: await result2.offer.snapshot };
+    const snapshot = await result2.offer.snapshot, frame = document.querySelector('#markdown [data-testid="markdown-preview-frame"]'), viewport = document.querySelector('#markdown [data-testid="markdown-scroll-viewport"]');
+    getSelection().removeAllRanges();
+    viewport.scrollTop = range.getBoundingClientRect().top - viewport.getBoundingClientRect().top + 5;
+    const partial = result2.offer.source.geometry(), partialClipped = partial.kind === "visible" && partial.rects.every((rect) => rect.top >= viewport.getBoundingClientRect().top);
+    viewport.scrollTop = 140;
+    const offscreen = { geometry: result2.offer.source.geometry().kind, selectedTop: range.getBoundingClientRect().top, viewportTop: viewport.getBoundingClientRect().top };
+    viewport.scrollTop = 500;
+    const before = viewport.scrollTop, revealed = await result2.offer.source.reveal(), rect = range.getBoundingClientRect(), bounds = viewport.getBoundingClientRect(), geometry = result2.offer.source.geometry();
+    return { snapshot, partialClipped, offscreen, before, after: viewport.scrollTop, frameScroll: frame.scrollTop, revealed, geometry: geometry.kind, selectedVisible: rect.top >= bounds.top && rect.bottom <= bounds.bottom, clipped: geometry.kind === "visible" && geometry.rects.every((rect) => rect.top >= bounds.top && rect.bottom <= bounds.bottom && rect.left >= bounds.left && rect.right <= bounds.right) };
   });
   assert.equal(markdown.snapshot.text, "Markdown selected  text\n\u5C3E  ");
   assert.equal(markdown.snapshot.origin.kind, "markdown");
   assert.equal(Object.hasOwn(markdown.snapshot.origin, "lineStart"), false);
+  assert.equal(markdown.partialClipped, true);
+  assert.ok(markdown.offscreen.selectedTop < markdown.offscreen.viewportTop);
+  assert.equal(markdown.offscreen.geometry, "offscreen");
+  assert.equal(markdown.revealed.kind, "highlighted");
+  assert.ok(markdown.after < markdown.before);
+  assert.equal(markdown.frameScroll, 0);
+  assert.equal(markdown.geometry, "visible");
+  assert.equal(markdown.selectedVisible, true);
+  assert.equal(markdown.clipped, true);
   const terminal = await page.evaluate(async () => {
     function binding(id) {
       const root = document.querySelector(`#${id} [data-testid="terminal-surface"]`), entry = Bridge.currentFibers(root).find(({ fiber }) => fiber.type === __r(5175).default);

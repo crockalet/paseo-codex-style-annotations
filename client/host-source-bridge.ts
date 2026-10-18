@@ -229,11 +229,33 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
     const content = preview.textContent ?? "", start = range.startContainer, end = range.endContainer, startOffset = range.startOffset, endOffset = range.endOffset;
     const exact = () => valid() && preview.textContent === content && range.startContainer === start && range.endContainer === end && range.startOffset === startOffset && range.endOffset === endOffset && range.toString() === text;
     const snapshot = fingerprint(content).then((version): ExternalSnapshot => ({ text, title: `${file.requestedPath} · Markdown`, origin: { kind: "markdown", workspace, tabId: context.tabId, file, version } }));
-    return makeOffer(root, captured, snapshot, valid, () => {
-      const bounds = geometry(preview); if (!exact() || bounds.kind !== "visible") return { kind: "unavailable" };
-      const rects = Array.from(range.getClientRects()).filter((r) => r.bottom > bounds.bounds.top && r.top < bounds.bounds.bottom);
-      return rects.length ? { ...bounds, rects } : { kind: "offscreen" };
-    }, async () => { if (!exact()) return { kind: "unavailable", reason: "Markdown 预览已变化，原文位置不可用。" }; const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range); preview.scrollTop += range.getBoundingClientRect().top - preview.getBoundingClientRect().top - 40; return { kind: "highlighted" }; });
+    const markdownGeometry = (): SourceGeometry => {
+      if (!exact()) return { kind: "unavailable" };
+      const bounds = geometry(preview); if (bounds.kind !== "visible") return bounds;
+      const pane = root.getBoundingClientRect();
+      let left = Math.max(bounds.bounds.left, pane.left), right = Math.min(bounds.bounds.right, pane.right), top = Math.max(bounds.bounds.top, pane.top), bottom = Math.min(bounds.bounds.bottom, pane.bottom);
+      for (let ancestor: HTMLElement | null = preview; ancestor; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor), rect = ancestor.getBoundingClientRect();
+        if (style.overflowX !== "visible") { left = Math.max(left, rect.left + ancestor.clientLeft); right = Math.min(right, rect.left + ancestor.clientLeft + ancestor.clientWidth); }
+        if (style.overflowY !== "visible") { top = Math.max(top, rect.top + ancestor.clientTop); bottom = Math.min(bottom, rect.top + ancestor.clientTop + ancestor.clientHeight); }
+      }
+      if (right <= left || bottom <= top) return { kind: "offscreen" };
+      const rects = Array.from(range.getClientRects(), (rect) => {
+        const x = Math.max(left, rect.left), y = Math.max(top, rect.top);
+        return new DOMRect(x, y, Math.min(right, rect.right) - x, Math.min(bottom, rect.bottom) - y);
+      }).filter((rect) => rect.width > 0 && rect.height > 0);
+      return rects.length ? { kind: "visible", rects, bounds: { left, right, top, bottom } } : { kind: "offscreen" };
+    };
+    return makeOffer(root, captured, snapshot, valid, markdownGeometry, async () => {
+      if (!exact()) return { kind: "unavailable", reason: "Markdown 预览已变化，原文位置不可用。" };
+      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+      for (let ancestor = preview.parentElement; ancestor && root.contains(ancestor); ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor), rect = ancestor.getBoundingClientRect(), selected = range.getBoundingClientRect();
+        if (/auto|scroll/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight) ancestor.scrollTop += selected.top - rect.top - ancestor.clientTop - Math.min(40, ancestor.clientHeight / 4);
+        if (/auto|scroll/.test(style.overflowX) && ancestor.scrollWidth > ancestor.clientWidth) ancestor.scrollLeft += selected.left - rect.left - ancestor.clientLeft;
+      }
+      return markdownGeometry().kind === "visible" ? { kind: "highlighted" } : { kind: "unavailable", reason: "Markdown 原文仍在预览可见区域外。" };
+    });
   };
 
   const terminalIds = () => resolveSemanticModuleIds(source, {
@@ -477,7 +499,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       const scan = () => {
         scanFrame = 0;
         for (const [root, bound] of terminals) {
-          let current: Terminal | null = null; try { if (visible(root)) current = terminalBinding(root).terminal; } catch { /* Contract drift invalidates this instance. */ }
+          let current: Terminal | null = null; try { if (visible(root)) current = terminalBinding(root).terminal; } catch {}
           if (current !== bound.terminal) { bound.dispose(); terminalEpochs.get(bound.terminal)?.dispose(); terminalEpochs.delete(bound.terminal); terminals.delete(root); }
         }
         for (const root of document.querySelectorAll<HTMLElement>('[data-testid="terminal-surface"][data-terminal-scrollbar-root="true"]')) {
@@ -486,7 +508,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
             const { terminal } = terminalBinding(root), onChange = terminal.onSelectionChange(() => publish(root)), onScroll = terminal.onScroll(() => { if (activeRoot === root) publish(root, false); });
             const resize = new ResizeObserver(() => { if (activeRoot === root) publish(root, false); }); resize.observe(root);
             terminals.set(root, { terminal, dispose: () => { onChange.dispose(); onScroll.dispose(); resize.disconnect(); } });
-          } catch { /* Other sources remain available when terminal contracts change. */ }
+          } catch {}
         }
         if (activeRoot && (!visible(activeRoot) || lastSelection?.kind === "offer" && !lastSelection.offer.validForAdd())) { activeRoot = null; lastSelection = null; listener(null); }
       };
