@@ -1,21 +1,22 @@
-# Quote Notes
+# Codex Style Chat Annotations
 
 Select text in a Paseo agent chat, attach it as an annotation, and add an optional comment.
 Draft and sent annotations collapse into an **n 条注释** capsule. You can also ask about a
 selection in a side chat.
 
-![Quote Notes illustrated preview using sample data](assets/preview.png)
+![Codex Style Chat Annotations illustrated preview using sample data](assets/preview.png)
 
 The preview illustrates the interface with sample data.
 
 ## Install
 
-Quote Notes requires Paseo 0.11.2 or later. Enable plugins in **Settings > Plugins**.
-Disable the original `quote` plugin before enabling Quote Notes. Running both is unsupported.
+Codex Style Chat Annotations requires Paseo 0.11.2 or later.
+Enable plugins in **Settings > Plugins**. Disable the original `quote` plugin before enabling
+Codex Style Chat Annotations. Running both is unsupported.
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-quote-notes --ref v0.1.0
+paseo plugin add git:xzthemeofsss/paseo-quote-notes --ref v0.1.1
 ```
 
 Skip the disable command if the original plugin is not installed. The new runtime ID is
@@ -54,7 +55,8 @@ outside closes it. Sent annotations are read only.
 
 Paseo drops the separate comment metadata when sending. The expanded view keeps the complete
 sent text, including the comment, without inferring a split. Unsupported and pending message
-rows retain their native attachment cards. Disabling Quote Notes restores the native cards.
+rows retain their native attachment cards. Disabling Codex Style Chat Annotations
+restores the native cards.
 
 ## Ask in a side chat
 
@@ -66,8 +68,9 @@ full Paseo renderer.
 
 ## Data access and compatibility
 
-Quote Notes is trusted client code. It reads selected chat text, the active agent and draft,
-sent message attachments, and recent conversation text for side chats. It stores annotations
+Codex Style Chat Annotations is trusted client code. It reads selected chat text,
+the active agent and draft, sent message attachments, and recent conversation text for side chats.
+It stores annotations
 in the existing native draft and writes to the clipboard when you choose to copy an entry.
 When you send the draft, Paseo sends the quote and comment through your configured agent
 provider. Asking in a side chat sends the selection, question, and recent context to that
@@ -96,6 +99,7 @@ libraries, so installation needs no preparation command or runtime dependency in
 
 ## Credits and license
 
-Quote Notes is a fork of [paseo-quote by Chechulin Serhii](https://github.com/keefeere/paseo-quote).
+Codex Style Chat Annotations is a fork of
+[paseo-quote by Chechulin Serhii](https://github.com/keefeere/paseo-quote).
 It adds draft annotation editing, source markers, and sent annotation capsules. The original
 [MIT license](LICENSE) and copyright notice are preserved.
