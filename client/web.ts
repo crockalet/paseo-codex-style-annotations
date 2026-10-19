@@ -383,10 +383,12 @@ const STYLE = `
 .bar{display:flex;align-items:center;gap:2px;padding:3px;max-width:calc(100vw - 16px)}
 .add-group{display:flex;align-items:center;min-width:0;border-radius:7px}
 .add-group:hover{background:var(--pq-hover)}
-[data-action="quote"]{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis}
+[data-action="quote"]{display:block;min-width:0;padding-right:5px;overflow:hidden;text-overflow:ellipsis}
+.add-group button:hover:not(:disabled){background:transparent}
 [data-action="side"]{flex-shrink:0;max-width:46vw;overflow:hidden;text-overflow:ellipsis;display:block}
-.receiver-switch{position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;align-self:stretch;border-left:1px solid var(--pq-border);border-radius:0 7px 7px 0}
-.receiver-switch:focus-within,button:focus-visible{outline:2px solid var(--pq-fg);outline-offset:1px}
+.receiver-switch{position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;align-self:stretch;color:var(--pq-muted);border-radius:7px}
+.receiver-switch:has(select:focus-visible){outline:2px solid var(--pq-muted);outline-offset:-2px}
+button:focus-visible{outline:2px solid var(--pq-fg);outline-offset:1px}
 .receiver-switch svg{pointer-events:none}
 select[data-receiver]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font:inherit}
 option{color:var(--pq-fg);background:var(--pq-bg)}
