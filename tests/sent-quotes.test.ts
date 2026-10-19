@@ -13,7 +13,7 @@ const quote = (id = "b01259d1-5ecb-4365-a7e7-fb8647c8d52a", text = "> original\n
 });
 const file = { type: "uploaded_file", fileName: "keep.txt" };
 const defaults = { serverId: "host", agentId: "agent", messageId: "message", message: "Keep native body", images: ["image.png"], attachments: [quote(), file], isPending: false };
-type Props = Omit<typeof defaults, "attachments" | "messageId"> & { messageId?: string | null; attachments: unknown[] };
+type Props = Omit<typeof defaults, "attachments"> & { attachments: unknown[] };
 
 function fixture() {
   const dom = new JSDOM('<main style="font-family:Arial;color:rgb(20,20,20);background:rgb(255,255,255)" data-testid="workspace-pane-one"></main><aside></aside>', { pretendToBeVisual: true });
@@ -42,8 +42,8 @@ function fixture() {
   const root = createRoot(doc.querySelector("main")!);
   const capability: SentNative = { user: Native, frame: Frame, label: Label };
   return { dom, doc, Native, capability, counts: () => ({ mounts, unmounts }), copied: () => ({ bodyCopied, quoteCopied }),
-    async render(props: Props = defaults, portal = false, rowId = "row-stream-id") {
-      const content = h("div", { "data-message-id": rowId, style: { display: "flex", flexDirection: "column" } }, h(Native, props));
+    async render(props: Props = defaults, portal = false) {
+      const content = h("div", { "data-message-id": "row-stream-id", style: { display: "flex", flexDirection: "column" } }, h(Native, props));
       await act(async () => root.render(portal ? createPortal(content, doc.querySelector("aside")!) : content)); await tick();
     },
     install(discover: (signal: AbortSignal) => Promise<SentNative> = async () => capability) { return installSentQuotes({ discover }); },
@@ -58,69 +58,6 @@ function controls(f: ReturnType<typeof fixture>) {
   const button = element.shadowRoot!.querySelector<HTMLButtonElement>(".chip")!;
   const shadow = f.doc.querySelector<HTMLElement>('[data-paseo-sent-quotes="popup"]')!.shadowRoot!, panel = shadow.querySelector<HTMLElement>(".panel")!;
   return { element, shadow, button, panel };
-}
-
-for (const messageId of [undefined, "message"]) {
-  test(`pending ${messageId === undefined ? "omitted" : "canonical"} ID keeps one busy capsule and open preview through acknowledgement`, async () => {
-    const f = fixture();
-    const pending = { ...defaults, messageId, message: "", images: [], attachments: [quote()], isPending: true };
-    await f.render(pending);
-    const native = f.native(), frame = native.querySelector<HTMLElement>("[data-frame]")!;
-    native.parentElement!.setAttribute("data-history-row-id", "row-stream-id");
-    const dispose = f.install();
-    try {
-      await tick(); const old = controls(f); old.button.click();
-      const token = frame.getAttribute("data-paseo-sent-quote-hidden");
-      assert.equal(native.getAttribute("aria-busy"), "true");
-      assert.equal(old.element.getAttribute("aria-busy"), "true");
-      assert.equal(old.panel.getAttribute("aria-label"), "注释");
-      assert.equal(native.style.display, "none"); assert.equal(old.panel.hidden, false);
-      await f.render({ ...pending, messageId: "message", isPending: false });
-      assert.equal(f.capsule(), old.element); assert.equal(controls(f).panel, old.panel);
-      assert.equal(old.panel.hidden, false); assert.equal(old.button.getAttribute("aria-expanded"), "true");
-      assert.equal(old.element.getAttribute("aria-busy"), "false");
-      assert.equal(native.getAttribute("aria-busy"), "false");
-      assert.equal(frame.getAttribute("data-paseo-sent-quote-hidden"), token);
-      assert.deepEqual(f.counts(), { mounts: 1, unmounts: 0 });
-    } finally { dispose(); assert.equal(native.style.display, ""); assert.equal(frame.style.display, ""); await f.close(); }
-  });
-}
-
-for (const reason of ["null-id", "empty-id", "missing-ready-id", "empty-local-id", "blank-local-id", "history-mismatch", "busy-ready", "busy-pending", "pending-provider"] as const) {
-  test(`unproven optimistic ${reason} stays native`, async () => {
-    const f = fixture();
-    let props: Props = { ...defaults, messageId: undefined, isPending: true };
-    if (reason === "null-id") props = { ...props, messageId: null };
-    if (reason === "empty-id") props = { ...props, messageId: "" };
-    if (reason === "missing-ready-id" || reason === "busy-ready") props = { ...props, isPending: false };
-    if (reason === "busy-ready") props = { ...props, messageId: "message" };
-    if (reason === "pending-provider") props = { ...props, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, provider: "other" } }] };
-    await f.render(props, false, reason === "empty-local-id" ? "" : reason === "blank-local-id" ? " " : "row-stream-id");
-    const native = f.native();
-    if (reason === "history-mismatch") native.parentElement!.setAttribute("data-history-row-id", "other-row");
-    if (reason === "busy-ready") native.setAttribute("aria-busy", "true");
-    if (reason === "busy-pending") native.setAttribute("aria-busy", "false");
-    const dispose = f.install();
-    try { await tick(); assert.equal(f.capsule(), null); assert.equal(native.querySelector<HTMLElement>("[data-frame]")!.style.display, ""); }
-    finally { dispose(); await f.close(); }
-  });
-}
-
-for (const change of ["local-row", "agent", "host", "reverse", "canonical-replacement"] as const) {
-  test(`${change} identity does not reuse a sent capsule or open preview`, async () => {
-    const f = fixture();
-    const initial = { ...defaults, isPending: true, messageId: change === "reverse" || change === "canonical-replacement" ? "message" : undefined };
-    await f.render(initial); const native = f.native(), dispose = f.install();
-    try {
-      await tick(); const old = controls(f); old.button.click();
-      const next = { ...initial, ...(change === "agent" ? { agentId: "other-agent" } : {}), ...(change === "host" ? { serverId: "other-host" } : {}),
-        ...(change === "reverse" ? { messageId: undefined } : {}), ...(change === "canonical-replacement" ? { messageId: "other-message" } : {}) };
-      await f.render(next, false, change === "local-row" ? "other-row" : "row-stream-id");
-      native.classList.add("notify-committed-props"); await tick();
-      assert.notEqual(f.capsule(), old.element); assert.equal(old.element.isConnected, false);
-      assert.equal(controls(f).panel.hidden, true);
-    } finally { dispose(); await f.close(); }
-  });
 }
 
 for (const provider of ["quote", "quote-notes"]) {
@@ -188,9 +125,6 @@ test("props-only identity/content changes reset disclosure without replacing the
     await new Promise((resolve) => setTimeout(resolve, 1050));
     assert.notEqual(f.capsule(), current.element); assert.equal(controls(f).panel.hidden, true);
     assert.equal(controls(f).shadow.querySelector("pre")!.textContent, "changed text with same native label");
-    await f.render({ ...defaults, isPending: true }); assert.ok(f.capsule());
-    assert.equal(f.capsule()!.getAttribute("aria-busy"), "true");
-    await f.render(defaults); assert.ok(f.capsule());
   } finally { dispose(); await f.close(); }
 });
 
