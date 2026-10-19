@@ -8,8 +8,6 @@ Chat selections also support side questions. A child agent uses the parent's pro
 
 ## Setup
 
-The published `v0.1.1` release supports chat annotations. Workspace sources and annotation-type settings described here are available on this branch and have not yet been released.
-
 Paseo 0.11.4 or later with native plugin Settings support is required. Disable the original `quote` plugin before enabling this plugin. Existing `quote` annotations remain readable; editing preserves their identity. New annotations use the `quote-notes` runtime ID. No additional account or token is required.
 
 The Annotation types settings control chat, file, Diff, Markdown, and terminal capture independently. All five start enabled. These host settings affect new annotations; saved annotations and chat side questions remain available. Read failures and save conflicts are visible and preserve saved values.

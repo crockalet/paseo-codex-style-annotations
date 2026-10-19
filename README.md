@@ -6,18 +6,18 @@ Attach selected text from a Paseo chat, file editor, Markdown preview, Diff, or 
 
 ![Illustrated annotation preview with sample data](assets/preview.png)
 
-The published `v0.1.1` release supports chat annotations. Workspace sources, annotation-type settings, and the other updates described here are available on this branch and have not yet been released.
+Version `v0.2.0` adds workspace sources and annotation-type settings to chat annotations.
 
 ## Install
 
-This branch requires Paseo 0.11.4 or later with native plugin Settings support. Enable plugins in **Settings > Plugins**. If the original `quote` plugin is installed, disable it before enabling this plugin.
+Paseo 0.11.4 or later with native plugin Settings support is required. Enable plugins in **Settings > Plugins**. If the original `quote` plugin is installed, disable it before enabling this plugin.
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.1.1
+paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.2.0
 ```
 
-The command pins the published chat-only release. Skip the disable command if `quote` is not installed. The runtime ID remains `quote-notes`; existing `quote` annotations remain readable, and edits preserve their identity.
+The command installs `v0.2.0`. Skip the disable command if `quote` is not installed. The runtime ID remains `quote-notes`; existing `quote` annotations remain readable, and edits preserve their identity.
 
 ## Add and edit annotations
 
