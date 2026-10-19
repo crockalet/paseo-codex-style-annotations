@@ -4,18 +4,18 @@
 
 在 Paseo 的聊天、文件编辑器、Markdown 预览、Diff 或终端中选中文字，将其作为注释添加到对话，再按需补充评论。已保存的注释可以编辑，也可以在原文仍可定位时跳转回去。
 
-已发布的 `v0.1.1` 只支持聊天注释。本文中的工作区来源、注释类型设置和其他更新目前位于此分支，尚未发布。
+`v0.2.0` 在聊天注释的基础上新增工作区来源和注释类型设置。
 
 ## 安装
 
-此分支需要 Paseo 0.11.4 或更高版本，并支持原生插件设置。先在「设置 > 插件」中启用插件。若已安装原版 `quote` 插件，请先停用。
+需要 Paseo 0.11.4 或更高版本，并支持原生插件设置。先在「设置 > 插件」中启用插件。若已安装原版 `quote` 插件，请先停用。
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.1.1
+paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.2.0
 ```
 
-以上命令安装已发布的聊天注释版本。没有安装 `quote` 时，跳过停用命令。运行时 ID 保持为 `quote-notes`；原版插件保存的注释仍可读取，编辑时保留其身份信息。
+以上命令安装 `v0.2.0`。没有安装 `quote` 时，跳过停用命令。运行时 ID 保持为 `quote-notes`；原版插件保存的注释仍可读取，编辑时保留其身份信息。
 
 ## 添加和编辑
 
