@@ -115,7 +115,7 @@ try {
     };
     const luminance = (color) => color.slice(0, 3).map((channel) => channel / 255).map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
     const read = (element) => {
-      const style = getComputedStyle(element), foreground = paint(element, parse(style.color)), background = paint(element, [0, 0, 0, 0]);
+      const style = getComputedStyle(element), foreground = element.tagName === "OPTION" ? parse(style.color) : paint(element, parse(style.color)), background = element.tagName === "OPTION" ? parse(style.backgroundColor) : paint(element, [0, 0, 0, 0]);
       const light = luminance(foreground), dark = luminance(background);
       return { color: style.color, background: style.backgroundColor, opacity: style.opacity, colorScheme: style.colorScheme, cursor: style.cursor, disabled: element.disabled ?? false, contrast: (Math.max(light, dark) + 0.05) / (Math.min(light, dark) + 0.05) };
     };
@@ -137,9 +137,9 @@ try {
       section.append(title, host);
       document.getElementById("cases").append(section);
       const shadow = host.attachShadow({ mode: "open" });
-      shadow.innerHTML = `<style>${paletteProbe.STYLE}</style><div class="panel"><div class="bar"><span class="source-label">终端输出</span><select aria-label="接收对话"><option>First chat</option><option>Second chat</option></select><button>Add</button><button disabled>Disabled</button></div><div class="bar"><span class="selection-status">没有接收对话</span><span class="status">Status</span><button class="primary">Ask</button><button class="primary" disabled>Ask</button></div></div>`;
+      shadow.innerHTML = `<style>${paletteProbe.STYLE}</style><div class="panel"><div class="bar"><div class="add-group"><button data-action="quote">添加到 First chat 对话</button><span class="receiver-switch"><span aria-hidden="true">⌄</span><select data-receiver aria-label="切换接收对话：First chat"><option>First chat</option><option>Second chat</option></select></span></div><button disabled>Disabled</button></div><div class="bar"><span class="selection-status">没有接收对话</span><span class="status">Status</span><button class="primary">Ask</button><button class="primary" disabled>Ask</button></div></div>`;
       paletteProbe.applyPalette(host, anchor);
-      return { name: scenario.name, preserved: scenario.preserved, anchor: read(anchor), elements: Object.fromEntries([".panel", ".source-label", ".selection-status", ".status", "select", "option", "button", "button:disabled", ".primary", ".primary:disabled"].map((selector) => [selector, read(shadow.querySelector(selector))])) };
+      return { name: scenario.name, preserved: scenario.preserved, anchor: read(anchor), elements: Object.fromEntries([".panel", ".receiver-switch", ".selection-status", ".status", "option", "button", "button:disabled", ".primary", ".primary:disabled"].map((selector) => [selector, read(shadow.querySelector(selector))])) };
     });
   });
   const artifacts = process.env.PASEO_PALETTE_ARTIFACTS;
@@ -161,9 +161,9 @@ try {
     }
     if (scenario.preserved) assert.equal(scenario.elements[".panel"].color, scenario.preserved, "readable theme foreground is preserved");
     const scheme = scenario.name.startsWith("Light") ? "light" : scenario.name === "Middle gray" ? "light" : "dark";
-    assert.equal(scenario.elements.select.colorScheme, scheme, `${scenario.name} select uses the matching native color scheme`);
+    assert.equal(scenario.elements[".receiver-switch"].colorScheme, scheme, `${scenario.name} receiver uses the matching native color scheme`);
   }
-  console.log(`PASS ${results.length} native-terminal palette scenarios, ${results.length * 10} effective contrast checks`);
+  console.log(`PASS ${results.length} native-terminal palette scenarios, ${results.length * 9} effective contrast checks`);
 } finally {
   await browser.close();
 }

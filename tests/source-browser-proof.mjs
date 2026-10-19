@@ -6,6 +6,8 @@ const require2 = createRequire(new URL("../package.json", import.meta.url));
 const { build } = require2("esbuild");
 const playwright = process.env.PASEO_PLAYWRIGHT ?? require2.resolve("playwright");
 const { chromium } = await import(pathToFileURL(playwright).href);
+const proofDirectory = process.env.PASEO_TOOLBAR_ARTIFACTS ?? "/tmp/paseo-annotations-extension/toolbar-i18n-proof";
+fs.mkdirSync(proofDirectory, { recursive: true });
 const repo = fileURLToPath(new URL("..", import.meta.url));
 const bundleDirectory = "/Applications/Paseo.app/Contents/Resources/app-dist/_expo/static/js/web";
 const candidates = fs.readdirSync(bundleDirectory).filter((name) => /^index-.*\.js$/.test(name));
@@ -262,24 +264,80 @@ try {
     };
   });
   await page.addScriptTag({ content: toolbar.outputFiles[0].text });
-  await page.evaluate(() => { window.__test.sends = []; window.__test.stopToolbar = Toolbar.installSelectionBar({ paseo: { agents: { ref: () => ({ send: (...args) => window.__test.sends.push(args) }) }, workspaces: { ref: () => ({ agents: { create: (...args) => { window.__test.sends.push(args); throw Error("Forbidden agent creation"); } } }) } }, openPanel() { throw Error("Forbidden panel"); } }); });
+  await page.evaluate(() => { window.__test.sends = []; const listeners = new Set(); window.__test.locale = "en"; window.__test.changeLocale = (locale) => { window.__test.locale = locale; for (const listener of listeners) listener(); }; window.__test.stopToolbar = Toolbar.installSelectionBar({ paseo: { agents: { ref: () => ({ send: (...args) => window.__test.sends.push(args) }) }, workspaces: { ref: () => ({ agents: { create: (...args) => { window.__test.sends.push(args); throw Error("Forbidden agent creation"); } } }) } }, openPanel() { throw Error("Forbidden panel"); } }, undefined, { getSnapshot: () => window.__test.locale, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); }, dispose() { throw Error("Toolbar must not dispose shared language"); } }); });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.evaluate(() => document.querySelector('#file [data-testid="workspace-file-pane"]').dispatchEvent(new Event("pointerup", { bubbles: true })));
   await page.waitForFunction(() => document.querySelector('[data-paseo-quote]')?.shadowRoot?.querySelector('select[data-receiver]')?.selectedOptions[0]?.textContent === "Second chat");
-  fs.mkdirSync("/tmp/paseo-annotations-extension/recent-receiver-proof", { recursive: true });
-  await page.screenshot({ path: "/tmp/paseo-annotations-extension/recent-receiver-proof/auto-receiver.png" });
+  const toolbarElement = page.locator('[data-paseo-quote]');
+  const action = toolbarElement.locator('[data-action="quote"]');
+  const picker = toolbarElement.locator('select[data-receiver]');
+  const toolbarProof = [];
+  const captureToolbar = async (name) => {
+    const bounds = await toolbarElement.boundingBox();
+    assert.ok(bounds && bounds.width > 0 && bounds.height > 0);
+    const viewport = page.viewportSize();
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= viewport.width, `${name} stays within viewport`);
+    const state = await toolbarElement.evaluate((host) => {
+      const shadow = host.shadowRoot, action = shadow.querySelector('[data-action="quote"]'), picker = shadow.querySelector('select[data-receiver]');
+      const style = getComputedStyle(action);
+      return { label: action.textContent, accessible: action.getAttribute("aria-label"), title: action.title, receiver: picker.selectedOptions[0].textContent, optionNames: Array.from(picker.options).map((option) => option.textContent), textOverflow: style.textOverflow, ellipsized: action.scrollWidth > action.clientWidth, background: host.style.getPropertyValue("--pq-bg"), foreground: host.style.getPropertyValue("--pq-fg"), sourcePrefix: Boolean(shadow.querySelector('.source-label')), receiverWidth: picker.getBoundingClientRect().width, nativeSelect: picker instanceof HTMLSelectElement };
+    });
+    assert.equal(state.sourcePrefix, false); assert.equal(state.nativeSelect, true); assert.ok(state.receiverWidth >= 24 && state.receiverWidth <= 28);
+    assert.equal(state.accessible, state.label); assert.equal(state.title, state.label);
+    assert.equal(state.textOverflow, "ellipsis");
+    toolbarProof.push({ name, bounds, ...state });
+    await page.screenshot({ path: `${proofDirectory}/${name}.png`, clip: { x: Math.max(0, bounds.x - 2), y: Math.max(0, bounds.y - 2), width: Math.min(viewport.width - Math.max(0, bounds.x - 2), bounds.width + 4), height: bounds.height + 4 } });
+  };
+  await captureToolbar("toolbar-en");
+  assert.equal(await action.textContent(), "Add to Second chat");
+  await picker.focus();
+  await page.evaluate(() => window.__test.changeLocale("zh"));
+  assert.equal(await action.textContent(), "添加到 Second chat 对话");
+  assert.equal(await picker.evaluate((select) => select.getRootNode().activeElement === select), true);
+  await picker.evaluate((select) => select.blur());
+  await captureToolbar("toolbar-zh");
+  await picker.focus();
+  await picker.press("f");
+  await picker.press("Enter");
+  await page.waitForFunction(() => document.querySelector('[data-paseo-quote]').shadowRoot.querySelector('[data-action="quote"]').textContent === "添加到 First chat 对话");
+  await page.evaluate(() => window.__test.changeLocale("en"));
+  assert.equal(await action.textContent(), "Add to First chat");
+  await picker.evaluate((select) => select.blur());
+  await page.evaluate(() => {
+    const file = document.querySelector('#file [data-testid="workspace-file-pane"]');
+    file.style.backgroundColor = "#151519"; file.style.color = "#eee";
+    file.dispatchEvent(new Event("pointerup", { bubbles: true }));
+  });
+  await captureToolbar("toolbar-en-dark");
+  await page.setViewportSize({ width: 360, height: 900 });
+  const longName = "Very long conversation with full original title and preserved Unicode 中文名称 ".repeat(4);
+  await page.evaluate((name) => {
+    window.__test.session.agents.get("agent-one").title = name;
+    document.querySelector('#file [data-testid="workspace-file-pane"]').dispatchEvent(new Event("pointerup", { bubbles: true }));
+    window.__test.changeLocale("zh");
+  }, longName);
+  await page.waitForFunction((name) => document.querySelector('[data-paseo-quote]').shadowRoot.querySelector('[data-action="quote"]').textContent === `添加到 ${name} 对话`, longName);
+  await captureToolbar("toolbar-zh-narrow-long");
+  assert.equal(toolbarProof.at(-1).ellipsized, true);
+  assert.ok(toolbarProof.at(-1).optionNames.includes(longName));
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await page.evaluate(() => {
+    window.__test.session.agents.get("agent-one").title = "First chat";
+    document.querySelector('#file [data-testid="workspace-file-pane"]').dispatchEvent(new Event("pointerup", { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.querySelector('[data-paseo-quote]').shadowRoot.querySelector('select[data-receiver]').selectedOptions[0].textContent === "First chat");
   const draft = await page.evaluate(async () => {
     const shadow = document.querySelector('[data-paseo-quote]').shadowRoot;
     const selected = shadow.querySelector('select[data-receiver]').selectedOptions[0].textContent;
     shadow.querySelector('[data-action="quote"]').click();
     await new Promise((resolve) => setTimeout(resolve, 100));
     await window.__proofDraftHost.flush();
-    const attachmentCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-two")).length;
-    const firstCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-one")).length;
+    const attachmentCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-one")).length;
+    const nonRecipientCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-two")).length;
     const composers = document.querySelectorAll("textarea[data-composer-input]").length;
-    return { selected, attachmentCount, firstCount, composers, sends: window.__test.sends.length };
+    return { selected, attachmentCount, nonRecipientCount, composers, sends: window.__test.sends.length };
   });
-  assert.deepEqual(draft, { selected: "Second chat", attachmentCount: 1, firstCount: 0, composers: 0, sends: 0 });
+  assert.deepEqual(draft, { selected: "First chat", attachmentCount: 1, nonRecipientCount: 0, composers: 0, sends: 0 });
   const markdown = await page.evaluate(async () => {
     const text = document.querySelector("#markdown p").firstChild, range = document.createRange();
     range.setStart(text, 0);
@@ -421,8 +479,8 @@ try {
   assert.equal(final.remaining, 0);
   assert.deepEqual(final.inputs, []);
   assert.deepEqual(errors, []);
-  const result = { passed: true, focus, draft, fileTokens, file, markdown, terminal, working, old, right, mixed, reversed, mixedFiles, boundary, unified, final };
-  fs.writeFileSync(process.env.PASEO_SOURCE_PROOF ?? "/tmp/paseo-external-source-browser-proof.json", JSON.stringify({ ...result, bundlePath }, null, 2));
+  const result = { passed: true, toolbarProof, focus, draft, fileTokens, file, markdown, terminal, working, old, right, mixed, reversed, mixedFiles, boundary, unified, final };
+  fs.writeFileSync(process.env.PASEO_SOURCE_PROOF ?? `${proofDirectory}/source-browser-proof.json`, JSON.stringify({ ...result, bundlePath }, null, 2));
   console.log(JSON.stringify({ passed: true, final }, null, 2));
 } catch (error) {
   console.error(error);
