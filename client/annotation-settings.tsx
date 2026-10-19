@@ -63,8 +63,8 @@ export function AnnotationSettings({ controller, language = englishLanguage }: {
   </SettingsSection>;
 }
 
-export function installAnnotationSettings(client: PluginClientContext, controller: AnnotationPreferences): () => void {
-  const language = createSettingsLanguage();
+export function installAnnotationSettings(client: PluginClientContext, controller: AnnotationPreferences, sharedLanguage?: SettingsLanguage): () => void {
+  const language = sharedLanguage ?? createSettingsLanguage();
   const Component = () => <AnnotationSettings controller={controller} language={language} />;
   let title = settingsCopy[language.getSnapshot()].title;
   const register = () => client.addSettingsScreen({ id: "annotation-kinds", title, icon: "MessageSquareQuote", Component });
@@ -88,7 +88,7 @@ export function installAnnotationSettings(client: PluginClientContext, controlle
     if (disposed) return;
     disposed = true;
     unsubscribe();
-    language.dispose();
+    if (!sharedLanguage) language.dispose();
     remove();
   };
 }

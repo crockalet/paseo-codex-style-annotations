@@ -10,6 +10,7 @@ import type { SourceHost, ExternalSelection, ExternalOffer } from "../client/hos
 import { createAnnotationPreferences } from "../client/annotation-preferences";
 import type { AnnotationPreferences } from "../client/annotation-preferences";
 import type { StoreBinding } from "../client/host-draft-bridge";
+import type { SettingsLanguage, SettingsLocale } from "../client/settings-language";
 import { fingerprint } from "../client/external-origin";
 import { nativeHost } from "./native-host";
 import { setup, settle } from "./dom";
@@ -24,7 +25,7 @@ async function selectionBar(host: DraftHost, sources?: SourceHost) {
     if (name === "./quote-composer") return { installQuoteComposer: (options: { preferences?: AnnotationPreferences } = {}) => installQuoteComposer({ ...options, discover: async () => host, ...(sources ? { discoverSources: async () => sources } : {}) }) };
     return nativeRequire(name);
   }, module, module.exports);
-  return z.object({ installSelectionBar: z.custom<(client: { paseo: unknown; openPanel: (...args: unknown[]) => void }, preferences?: AnnotationPreferences) => () => void>((value) => typeof value === "function") }).parse(module.exports).installSelectionBar;
+  return z.object({ installSelectionBar: z.custom<(client: { paseo: unknown; openPanel: (...args: unknown[]) => void }, preferences?: AnnotationPreferences, language?: SettingsLanguage) => () => void>((value) => typeof value === "function") }).parse(module.exports).installSelectionBar;
 }
 
 test("两文字入口立即添加、紧凑可选评论、连续输入，Enter/Esc/IME 不发送 Agent", async () => {
@@ -43,7 +44,7 @@ test("两文字入口立即添加、紧凑可选评论、连续输入，Enter/Es
   await settle();
   const toolbar = dom.window.document.querySelector("[data-paseo-quote]");
   const shadow = toolbar?.shadowRoot;
-  assert.deepEqual(Array.from(shadow?.querySelectorAll(".bar button") ?? []).map((button) => button.textContent), ["添加到对话", "在侧边聊天中提问"]);
+  assert.deepEqual(Array.from(shadow?.querySelectorAll(".bar button") ?? []).map((button) => button.textContent), ["Add to chat", "Ask in side chat"]);
   assert.equal(shadow?.querySelector('[data-action="reply"],[data-action="send"],[data-action="copy"]'), null);
   const quote = shadow?.querySelector('[data-action="quote"]');
   if (!(quote instanceof dom.window.HTMLButtonElement)) throw new Error("Missing add action");
@@ -233,7 +234,7 @@ test("external toolbar defaults automatically, retains manual choice only for th
       source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
     receive({ kind: "offer", offer: selected });
     const toolbar = document.querySelector('[data-paseo-quote]'), shadow = toolbar?.shadowRoot, add = shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]'), chooser = shadow?.querySelector<HTMLSelectElement>('select[data-receiver]');
-    assert.ok(add && chooser); assert.equal(add.disabled, false); assert.equal(chooser.value, "0"); assert.deepEqual(Array.from(chooser.options).map((option) => option.textContent), ["选择接收对话", "First chat", "Second chat"]);
+    assert.ok(add && chooser); assert.equal(add.disabled, false); assert.equal(chooser.value, "0"); assert.deepEqual(Array.from(chooser.options).map((option) => option.textContent), ["Choose receiving chat", "First chat", "Second chat"]);
     assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="side"]')?.hidden, true);
     const publish = (offer: ExternalOffer) => receive({ kind: "offer", offer });
     const fresh = { ...selected, preferred: second };
@@ -264,6 +265,106 @@ test("disabling chat Add leaves the existing chat side-question action available
     const shadow = document.querySelector('[data-paseo-quote]')?.shadowRoot;
     assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]')?.disabled, true);
     assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="side"]')?.disabled, false);
-    assert.match(shadow?.querySelector('.selection-status')?.textContent ?? "", /已关闭/);
+    assert.match(shadow?.querySelector('.selection-status')?.textContent ?? "", /disabled/);
+  } finally { cleanup(); preferences.dispose(); await host.flush(); dom.window.close(); }
+});
+
+
+function testLanguage(initial: SettingsLocale = "en") {
+  let locale = initial, disposals = 0;
+  const listeners = new Set<() => void>();
+  const language: SettingsLanguage = {
+    getSnapshot: () => locale,
+    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    dispose() { disposals++; },
+  };
+  return { language, listeners, get disposals() { return disposals; }, change(next: SettingsLocale) { locale = next; for (const listener of listeners) listener(); } };
+}
+
+test("compact bilingual receiver action preserves manual routing, frozen text, native picker focus and snapshot errors", async () => {
+  const { host } = await nativeHost(), { dom, anchor, binding } = setup(), locale = testLanguage();
+  let receive: (selection: ExternalSelection) => void = () => {};
+  const sources: SourceHost = { capture: () => null, observe(listener) { receive = listener; return () => {}; }, reveal: async () => ({ kind: "unavailable", reason: "fixture" }), dispose() {} };
+  const preferences = createAnnotationPreferences({ async rpc(contract) { return contract.output.parse({ status: "ready", revision: "ready", values: {} }); } });
+  await preferences.refresh();
+  const cleanup = (await selectionBar(host, sources))({ paseo: {}, openPanel() {} }, preferences, locale.language);
+  try {
+    await settle();
+    const recipient = (agentId: string, label: string): StoreBinding => ({ kind: "store", hostId: binding.hostId, agentId, draftKey: host.key(binding.hostId, agentId), anchor, pane: binding.pane, label, validate: () => true });
+    const first = recipient("agent-one", "<First & chat>"), second = recipient("agent-two", "Second chat");
+    const snapshot = { text: "frozen exact selection", title: "a.ts:2", origin: { kind: "file" as const, workspace: { serverId: binding.hostId, workspaceId: "workspace-one", workspaceKey: "fixture-host:workspace-one", root: "/work" }, tabId: "file", file: { requestedPath: "a.ts", absolutePath: "/work/a.ts", relativePath: "a.ts" }, from: 4, to: 15, lineStart: 2, lineEnd: 2, version: await fingerprint("document") } };
+    const offer: ExternalOffer = { root: anchor, selectionToken: {}, label: "file", recipients: [first, second], preferred: second, validForAdd: () => true, snapshot: Promise.resolve(snapshot), source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
+    receive({ kind: "offer", offer }); await settle();
+    const shadow = document.querySelector('[data-paseo-quote]')?.shadowRoot;
+    const add = shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]'), chooser = shadow?.querySelector<HTMLSelectElement>('select[data-receiver]');
+    assert.ok(add && chooser);
+    assert.equal(shadow?.querySelector('.source-label'), null);
+    assert.equal(add.textContent, "Add to Second chat");
+    chooser.value = "0"; chooser.dispatchEvent(new dom.window.Event("change", { bubbles: true })); chooser.focus();
+    locale.change("zh");
+    assert.equal(add.textContent, "添加到 <First & chat> 对话"); assert.equal(add.title, add.textContent); assert.equal(add.getAttribute("aria-label"), add.textContent);
+    assert.equal(chooser.getAttribute("aria-label"), "切换接收对话：<First & chat>");
+    assert.equal(shadow?.querySelector('[role="toolbar"]')?.getAttribute("aria-label"), "选中文字");
+    assert.equal(shadow?.activeElement, chooser); assert.equal(chooser.value, "0"); assert.equal(add.querySelector("First"), null);
+    const mouse = new dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true }); chooser.dispatchEvent(mouse); assert.equal(mouse.defaultPrevented, false);
+    receive({ kind: "offer", offer: { ...offer } }); locale.change("en"); await settle();
+    assert.equal(chooser.value, "0"); assert.equal(add.textContent, "Add to <First & chat>");
+    anchor.textContent = "changed since capture"; add.click(); await settle(); await settle();
+    assert.equal(readQuotes(host.read(first.draftKey)).at(-1)?.item.text.endsWith(snapshot.text), true);
+    assert.equal(readQuotes(host.read(second.draftKey)).length, 0);
+    let rejectSnapshot: (cause: Error) => void = () => {};
+    receive({ kind: "offer", offer: { ...offer, selectionToken: {}, snapshot: new Promise((_, reject) => { rejectSnapshot = reject; }) } });
+    rejectSnapshot(new Error("opaque snapshot 原始错误")); await settle();
+    assert.equal(add.disabled, true); assert.equal(shadow?.querySelector('.selection-status')?.textContent, "opaque snapshot 原始错误");
+    locale.change("zh"); await preferences.refresh(); locale.change("en");
+    assert.equal(add.disabled, true); assert.equal(shadow?.querySelector('.selection-status')?.textContent, "opaque snapshot 原始错误");
+    receive({ kind: "offer", offer: { ...offer, selectionToken: {}, recipients: [], preferred: null } }); await settle();
+    assert.equal(shadow?.querySelector('.selection-status')?.textContent, "No receiving chat in this workspace");
+    locale.change("zh"); assert.equal(shadow?.querySelector('.selection-status')?.textContent, "没有同工作区的接收对话"); assert.equal(add.disabled, true);
+  } finally { cleanup(); assert.equal(locale.listeners.size, 0); assert.equal(locale.disposals, 0); preferences.dispose(); await host.flush(); dom.window.close(); }
+});
+
+test("side question locale refresh preserves text, focus, pending controls and opaque error", async () => {
+  const { host } = await nativeHost(), { dom, anchor } = setup(), locale = testLanguage();
+  let fail: (cause: Error) => void = () => {}, sends = 0;
+  const cleanup = (await selectionBar(host))({ paseo: { agents: { ref: () => ({ refresh: () => new Promise((_, reject) => { fail = reject; }), timeline: { refetch: async () => ({ entries: [] }) }, send() { sends++; } }) } }, openPanel() { throw Error("Unexpected panel"); } }, undefined, locale.language);
+  try {
+    const rect = new dom.window.DOMRect(100, 100, 100, 20); dom.window.Range.prototype.getClientRects = () => Object.assign([rect], { item: () => rect }); dom.window.Range.prototype.getBoundingClientRect = () => rect;
+    const range = document.createRange(); range.selectNodeContents(anchor); dom.window.getSelection()?.addRange(range); anchor.dispatchEvent(new dom.window.Event("pointerup", { bubbles: true })); await settle();
+    const shadow = document.querySelector('[data-paseo-quote]')?.shadowRoot;
+    const side = shadow?.querySelector<HTMLButtonElement>('[data-action="side"]'), ask = shadow?.querySelector<HTMLButtonElement>('[data-action="ask"]'), cancel = shadow?.querySelector<HTMLButtonElement>('[data-action="cancel"]');
+    assert.ok(side && ask && cancel); side.click();
+    const field = document.querySelector<HTMLTextAreaElement>('[data-paseo-sidechat-question]'); assert.ok(field);
+    assert.equal(field.placeholder, "Ask about this in a side chat…"); field.value = "my unsent side question"; field.setSelectionRange(3, 8);
+    locale.change("zh");
+    assert.equal(field.value, "my unsent side question"); assert.equal(document.activeElement, field); assert.equal(field.selectionStart, 3); assert.equal(field.selectionEnd, 8);
+    assert.equal(field.getAttribute("aria-label"), "侧边聊天问题"); assert.equal(field.placeholder, "在侧边聊天中询问这段内容…"); assert.equal(ask.textContent, "提问"); assert.equal(cancel.textContent, "取消");
+    assert.match(shadow?.querySelector('.status')?.textContent ?? "", /换行/);
+    ask.click(); locale.change("en"); assert.equal(ask.disabled, true); assert.equal(cancel.disabled, true); assert.equal(field.readOnly, true); assert.equal(field.value, "my unsent side question"); assert.equal(document.activeElement, field);
+    fail(new Error("opaque side 原始错误")); await settle();
+    assert.equal(ask.disabled, false); assert.equal(field.readOnly, false); assert.equal(shadow?.querySelector('.status')?.textContent, "opaque side 原始错误");
+    locale.change("zh"); assert.equal(shadow?.querySelector('.status')?.textContent, "opaque side 原始错误"); assert.equal(field.value, "my unsent side question"); assert.equal(document.activeElement, field); assert.equal(sends, 0);
+  } finally { cleanup(); assert.equal(locale.listeners.size, 0); assert.equal(locale.disposals, 0); await host.flush(); dom.window.close(); }
+});
+
+
+test("toolbar localizes loading, policy and settings failure statuses without translating raw errors", async () => {
+  const { host } = await nativeHost(), { dom, anchor } = setup(), locale = testLanguage();
+  let completeRead: (value: unknown) => void = () => {};
+  const preferences = createAnnotationPreferences({ async rpc(contract) { return contract.output.parse(await new Promise<unknown>((resolve) => { completeRead = resolve; })); } });
+  const cleanup = (await selectionBar(host))({ paseo: {}, openPanel() {} }, preferences, locale.language);
+  try {
+    const rect = new dom.window.DOMRect(100, 100, 100, 20); dom.window.Range.prototype.getClientRects = () => Object.assign([rect], { item: () => rect }); dom.window.Range.prototype.getBoundingClientRect = () => rect;
+    const range = document.createRange(); range.selectNodeContents(anchor); dom.window.getSelection()?.addRange(range); anchor.dispatchEvent(new dom.window.Event("pointerup", { bubbles: true })); await settle();
+    const shadow = document.querySelector('[data-paseo-quote]')?.shadowRoot, status = shadow?.querySelector<HTMLElement>('.selection-status'), add = shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]');
+    assert.ok(status && add); assert.equal(status.textContent, "Loading annotation settings…"); assert.equal(add.disabled, true);
+    locale.change("zh"); assert.equal(status.textContent, "正在读取注释设置…");
+    completeRead({ status: "invalid", revision: "fixture", error: "opaque settings 原始错误" }); await settle();
+    assert.equal(status.textContent, "注释设置读取失败：opaque settings 原始错误");
+    locale.change("en"); assert.equal(status.textContent, "Could not load annotation settings: opaque settings 原始错误"); assert.equal(add.disabled, true);
+    preferences.accept({ chat: false, file: true, diff: true, markdown: true, terminal: true });
+    assert.equal(status.textContent, "This annotation type is disabled. Enable it in plugin settings.");
+    locale.change("zh"); assert.equal(status.textContent, "此类注释已关闭，可在插件设置中开启"); assert.equal(add.disabled, true);
+    preferences.accept({ chat: true, file: true, diff: true, markdown: true, terminal: true }); assert.equal(status.hidden, true); assert.equal(add.disabled, false);
   } finally { cleanup(); preferences.dispose(); await host.flush(); dom.window.close(); }
 });

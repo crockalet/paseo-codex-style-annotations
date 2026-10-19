@@ -28,7 +28,7 @@ async function settingsExports(useSettings: () => SettingsState<typeof annotatio
     };
     return require(name);
   }, module, module.exports);
-  return z.object({ AnnotationSettings: z.custom<React.ComponentType<{ controller: ReturnType<typeof createAnnotationPreferences>; language?: SettingsLanguage }>>((value) => typeof value === "function") , installAnnotationSettings: z.custom<(client: Pick<PluginClientContext, "addSettingsScreen">, controller: ReturnType<typeof createAnnotationPreferences>) => () => void>((value) => typeof value === "function") }).parse(module.exports);
+  return z.object({ AnnotationSettings: z.custom<React.ComponentType<{ controller: ReturnType<typeof createAnnotationPreferences>; language?: SettingsLanguage }>>((value) => typeof value === "function") , installAnnotationSettings: z.custom<(client: Pick<PluginClientContext, "addSettingsScreen">, controller: ReturnType<typeof createAnnotationPreferences>, language?: SettingsLanguage) => () => void>((value) => typeof value === "function") }).parse(module.exports);
 }
 
 test("native Settings screen shows loading/error without default switches, keeps conflicts visible, and publishes only confirmed saves", async () => {
@@ -138,4 +138,16 @@ test("server rendering uses stable English even when a client source has Chinese
     const markup = renderToStaticMarkup(React.createElement(AnnotationSettings, { controller, language }));
     assert.match(markup, /Add annotations/); assert.match(markup, /Loading annotation settings/); assert.doesNotMatch(markup, /正在读取/);
   } finally { controller.dispose(); }
+});
+
+
+test("settings unsubscribes injected language without disposing its owner", async () => {
+  const { dom } = setup();
+  const controller = createAnnotationPreferences({ async rpc() { throw Error("No reads"); } });
+  const { installAnnotationSettings } = await settingsExports(() => ({ status: "loading", saving: false, saveError: null, async save() { return false; }, async reload() {}, async reset() { return false; } }));
+  const listeners = new Set<() => void>(); let disposals = 0, removals = 0;
+  const language: SettingsLanguage = { getSnapshot: () => "zh", subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; }, dispose() { disposals++; } };
+  const remove = installAnnotationSettings({ addSettingsScreen(screen) { assert.equal(screen.title, "注释类型"); return () => { removals++; }; } }, controller, language);
+  try { assert.equal(listeners.size, 1); remove(); remove(); assert.equal(listeners.size, 0); assert.equal(disposals, 0); assert.equal(removals, 1); }
+  finally { remove(); controller.dispose(); dom.window.close(); }
 });
