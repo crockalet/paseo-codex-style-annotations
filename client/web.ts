@@ -364,13 +364,10 @@ function applyPalette(host: DomElement, anchor: DomElement): void {
     ["--pq-muted", css(muted)],
     ["--pq-disabled", css(muted)],
     ["--pq-scheme", neutral(surface) === white ? "dark" : "light"],
-    ["--pq-faint", css(foreground, 0.42)],
     ["--pq-border", css(foreground, dark ? 0.16 : 0.14)],
     ["--pq-hover", css(foreground, 0.09)],
     ["--pq-bg", css(surface)],
-    ["--pq-field", css(background)],
     ["--pq-primary-fg", css(background)],
-    ["--pq-danger", dark ? "#f87171" : "#dc2626"],
     ["--pq-shadow", dark ? "0 12px 32px rgba(0, 0, 0, 0.5)" : "0 12px 32px rgba(0, 0, 0, 0.16)"],
     ["--pq-font", style.fontFamily || "system-ui, sans-serif"],
   ];
@@ -396,8 +393,7 @@ button{appearance:none;display:inline-flex;align-items:center;gap:6px;margin:0;p
 button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:1;color:var(--pq-disabled);background:transparent;cursor:default}button[hidden]{display:none}
 .editor{display:none;width:min(300px,calc(100vw - 16px));padding:4px}
 .panel[data-mode="side"] .bar{display:none}
-.panel[data-mode="side"] .editor{display:block}
-.panel[data-mode="side"] .editor{width:min(400px,calc(100vw - 16px));padding:10px}
+.panel[data-mode="side"] .editor{display:block;width:min(400px,calc(100vw - 16px));padding:10px}
 .quote{display:none;max-height:54px;overflow:hidden;padding-left:9px;border-left:2px solid var(--pq-border);color:var(--pq-muted);white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:8px}
 .panel[data-mode="side"] .quote{display:block}
 .footer{display:flex;align-items:center;justify-content:flex-end;gap:2px}.status{flex:1 1 auto;font-size:11px;color:var(--pq-muted);overflow-wrap:anywhere;padding:0 5px}.status:empty{display:none}
@@ -418,9 +414,7 @@ const MARKUP = `
  </div>
 </div>`;
 
-type ReceiverChoice =
- | { mode: "automatic"; binding: StoreBinding | null }
- | { mode: "manual"; binding: StoreBinding | null };
+type ReceiverChoice = { mode: "automatic" | "manual"; binding: StoreBinding | null };
 
 type Interaction =
  | { kind: "hidden" }
@@ -488,10 +482,9 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
  const hide = () => { interaction = { kind: "hidden" }; host.style.setProperty("display", "none", "important"); };
  const showBar = (snapshot: Snapshot) => {
   interaction = { kind: "selection", snapshot };
-  selectionStatus.hidden = true; receiverSwitch.hidden = true; button("side").hidden = false;
+  receiverSwitch.hidden = true; button("side").hidden = false;
   panel.setAttribute("data-mode", "bar");
   host.setAttribute("contenteditable", "true");
-  button("quote").disabled = !snapshot.composer || !snapshot.agentId;
   button("side").disabled = !snapshot.agentId;
   applyPalette(host, snapshot.anchor);
   host.style.setProperty("display", "block", "important");
@@ -510,12 +503,10 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
   interaction = { kind: "external", selection, choice };
   if (!sameOffer) { externalKind = null; externalError = null; }
   panel.setAttribute("data-mode", "bar"); button("side").hidden = true;
-  selectionStatus.hidden = selection.kind === "offer" && candidates.length > 0;
-  selectionStatus.textContent = selection.kind === "unavailable" ? selection.reason : candidates.length ? "" : copy().noReceiver;
   receiverSwitch.hidden = !candidates.length; receiver.innerHTML = "";
   const placeholder = document.createElement("option"); placeholder.setAttribute("value", ""); placeholder.textContent = copy().chooseReceiver; receiver.appendChild(placeholder);
   candidates.forEach((candidate, i) => { const option = document.createElement("option"); option.setAttribute("value", String(i)); option.textContent = candidate.label; receiver.appendChild(option); });
-  receiver.value = recipient ? String(candidates.indexOf(recipient)) : ""; button("quote").disabled = !recipient;
+  receiver.value = recipient ? String(candidates.indexOf(recipient)) : "";
   const root = selection.kind === "offer" ? selection.offer.root : selection.root;
   applyPalette(host, root as unknown as DomElement); host.style.setProperty("display", "block", "important");
   refreshCopy();
@@ -527,7 +518,7 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
  const changeReceiver: DomListener = () => {
   if (interaction.kind !== "external" || interaction.selection.kind !== "offer") return;
   interaction = { ...interaction, choice: { mode: "manual", binding: receiver.value === "" ? null : interaction.selection.offer.recipients[Number(receiver.value)] ?? null } };
-  button("quote").disabled = !interaction.choice.binding; refreshCopy();
+  refreshCopy();
  };
  receiver.addEventListener("change", changeReceiver);
  const updatePolicy = () => {

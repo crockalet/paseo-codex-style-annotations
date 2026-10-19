@@ -54,9 +54,9 @@ export function AnnotationSettings({ controller, language = englishLanguage }: {
   };
   return <SettingsSection title={copy.sectionTitle} info={copy.sectionInfo}>
     <SettingsCard>
-      {settings.status === "ready" ? annotationValuesSchema.keyof().options.map((key) => {
-        return <SettingsSwitch key={key} label={copy.kinds[key]} value={settings.values[key]} disabled={settings.saving} onValueChange={(value) => { void toggle(key, value); }} />;
-      }) : <SettingsRow label={settings.status === "loading" ? copy.loading : copy.unavailable} error={settings.status === "loading" ? undefined : settings.error} />}
+      {settings.status === "ready" ? annotationValuesSchema.keyof().options.map((key) =>
+        <SettingsSwitch key={key} label={copy.kinds[key]} value={settings.values[key]} disabled={settings.saving} onValueChange={(value) => { void toggle(key, value); }} />
+      ) : <SettingsRow label={settings.status === "loading" ? copy.loading : copy.unavailable} error={settings.status === "loading" ? undefined : settings.error} />}
       {settings.saveError ? <SettingsRow label={copy.unsaved} error={settings.saveError} /> : null}
       <SettingsAction label={copy.reload} actionLabel={copy.retry} disabled={settings.saving || settings.status === "loading"} onPress={() => { void settings.reload().then(() => controller.refresh()); }} />
     </SettingsCard>

@@ -243,7 +243,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       const text = z.string().parse(slice.call(doc, from, to)), lineStart = z.object({ number: z.number().int().positive() }).parse(lineAt.call(doc, from)).number, lineEnd = z.object({ number: z.number().int().positive() }).parse(lineAt.call(doc, to - 1)).number;
       const snapshot = fingerprint(content).then((version): ExternalSnapshot => ({ text, title: `${file.requestedPath}:${lineStart}-${lineEnd}`, origin: { kind: "file", workspace, tabId: context.tabId, file, from, to, lineStart, lineEnd, version } }));
       const sourceValid = () => valid() && field(view, "dom") instanceof HTMLElement && root.contains(z.instanceof(HTMLElement).parse(field(view, "dom")));
-      const exact = () => { try { return sourceValid() && root.contains(z.instanceof(HTMLElement).parse(field(view, "dom"))) && read().content === content; } catch { return false; } };
+      const exact = () => { try { return sourceValid() && read().content === content; } catch { return false; } };
       const editorGeometry = () => {
         if (!exact()) return { kind: "unavailable" } satisfies SourceGeometry;
         const coords = callable.parse(field(view, "coordsAtPos")), a = coords.call(view, from), b = coords.call(view, to), bounds = geometry(root);
@@ -470,9 +470,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
         return right > left && bottom > top ? [new DOMRect(left, top, right - left, bottom - top)] : [];
       });
       return rects.length ? { kind: "visible", rects, bounds } : { kind: "offscreen" };
-    }, async () => {
-      const saved = await snapshot; return reveal(saved);
-    });
+    }, async () => reveal(await snapshot));
   };
 
   const reveal: SourceHost["reveal"] = async (snapshot) => {
