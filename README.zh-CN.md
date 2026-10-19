@@ -12,7 +12,7 @@
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-quote-notes --ref v0.1.1
+paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.1.1
 ```
 
 以上命令安装已发布的聊天注释版本。没有安装 `quote` 时，跳过停用命令。运行时 ID 保持为 `quote-notes`；原版插件保存的注释仍可读取，编辑时保留其身份信息。

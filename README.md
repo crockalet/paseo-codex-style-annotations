@@ -14,7 +14,7 @@ This branch requires Paseo 0.11.4 or later with native plugin Settings support. 
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-quote-notes --ref v0.1.1
+paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.1.1
 ```
 
 The command pins the published chat-only release. Skip the disable command if `quote` is not installed. The runtime ID remains `quote-notes`; existing `quote` annotations remain readable, and edits preserve their identity.
