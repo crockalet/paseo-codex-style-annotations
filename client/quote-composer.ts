@@ -17,7 +17,7 @@ const CSS = `
 *{box-sizing:border-box}button{font:inherit;color:inherit;cursor:pointer}button:disabled{opacity:.45;cursor:default}
 .chip{height:29px;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:1px solid var(--quote-border);border-radius:999px;background:var(--quote-chip);color:var(--quote-muted);white-space:nowrap}
 .chip:hover{background:var(--quote-hover)}.chip:focus-visible,button:focus-visible{outline:2px solid var(--quote-muted);outline-offset:2px}
-.preview{border:1px solid var(--quote-border);border-radius:12px;background:var(--quote-bg);box-shadow:0 12px 36px #0004;overflow:hidden;max-height:min(480px,65vh);display:flex;flex-direction:column}
+.preview{border:1px solid var(--quote-border);border-radius:12px;background:var(--quote-bg);box-shadow:none;overflow:hidden;max-height:min(480px,65vh);display:flex;flex-direction:column}
 header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--quote-border);font-weight:600}
 .close,.remove,.edit,.footer button{border:0;border-radius:5px;background:transparent;padding:3px 6px;color:var(--quote-muted)}.close:hover,.remove:hover,.edit:hover,.footer button:hover{background:var(--quote-hover)}
 .entries{overflow:auto;overscroll-behavior:contain}.entry{padding:11px 12px}.entry+.entry{border-top:1px solid var(--quote-border)}
