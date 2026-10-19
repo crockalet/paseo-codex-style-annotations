@@ -66,6 +66,7 @@ for (const messageId of [undefined, "message"]) {
     const pending = { ...defaults, messageId, message: "", images: [], attachments: [quote()], isPending: true };
     await f.render(pending);
     const native = f.native(), frame = native.querySelector<HTMLElement>("[data-frame]")!;
+    native.parentElement!.setAttribute("data-history-row-id", "row-stream-id");
     const dispose = f.install();
     try {
       await tick(); const old = controls(f); old.button.click();
@@ -82,6 +83,43 @@ for (const messageId of [undefined, "message"]) {
       assert.equal(frame.getAttribute("data-paseo-sent-quote-hidden"), token);
       assert.deepEqual(f.counts(), { mounts: 1, unmounts: 0 });
     } finally { dispose(); assert.equal(native.style.display, ""); assert.equal(frame.style.display, ""); await f.close(); }
+  });
+}
+
+for (const reason of ["null-id", "empty-id", "missing-ready-id", "empty-local-id", "blank-local-id", "history-mismatch", "busy-ready", "busy-pending", "pending-provider"] as const) {
+  test(`unproven optimistic ${reason} stays native`, async () => {
+    const f = fixture();
+    let props: Props = { ...defaults, messageId: undefined, isPending: true };
+    if (reason === "null-id") props = { ...props, messageId: null };
+    if (reason === "empty-id") props = { ...props, messageId: "" };
+    if (reason === "missing-ready-id" || reason === "busy-ready") props = { ...props, isPending: false };
+    if (reason === "busy-ready") props = { ...props, messageId: "message" };
+    if (reason === "pending-provider") props = { ...props, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, provider: "other" } }] };
+    await f.render(props, false, reason === "empty-local-id" ? "" : reason === "blank-local-id" ? " " : "row-stream-id");
+    const native = f.native();
+    if (reason === "history-mismatch") native.parentElement!.setAttribute("data-history-row-id", "other-row");
+    if (reason === "busy-ready") native.setAttribute("aria-busy", "true");
+    if (reason === "busy-pending") native.setAttribute("aria-busy", "false");
+    const dispose = f.install();
+    try { await tick(); assert.equal(f.capsule(), null); assert.equal(native.querySelector<HTMLElement>("[data-frame]")!.style.display, ""); }
+    finally { dispose(); await f.close(); }
+  });
+}
+
+for (const change of ["local-row", "agent", "host", "reverse", "canonical-replacement"] as const) {
+  test(`${change} identity does not reuse a sent capsule or open preview`, async () => {
+    const f = fixture();
+    const initial = { ...defaults, isPending: true, messageId: change === "reverse" || change === "canonical-replacement" ? "message" : undefined };
+    await f.render(initial); const native = f.native(), dispose = f.install();
+    try {
+      await tick(); const old = controls(f); old.button.click();
+      const next = { ...initial, ...(change === "agent" ? { agentId: "other-agent" } : {}), ...(change === "host" ? { serverId: "other-host" } : {}),
+        ...(change === "reverse" ? { messageId: undefined } : {}), ...(change === "canonical-replacement" ? { messageId: "other-message" } : {}) };
+      await f.render(next, false, change === "local-row" ? "other-row" : "row-stream-id");
+      native.classList.add("notify-committed-props"); await tick();
+      assert.notEqual(f.capsule(), old.element); assert.equal(old.element.isConnected, false);
+      assert.equal(controls(f).panel.hidden, true);
+    } finally { dispose(); await f.close(); }
   });
 }
 
@@ -150,15 +188,15 @@ test("props-only identity/content changes reset disclosure without replacing the
     await new Promise((resolve) => setTimeout(resolve, 1050));
     assert.notEqual(f.capsule(), current.element); assert.equal(controls(f).panel.hidden, true);
     assert.equal(controls(f).shadow.querySelector("pre")!.textContent, "changed text with same native label");
-    await f.render({ ...defaults, isPending: true }); assert.equal(f.capsule(), null);
+    await f.render({ ...defaults, isPending: true }); assert.ok(f.capsule());
+    assert.equal(f.capsule()!.getAttribute("aria-busy"), "true");
     await f.render(defaults); assert.ok(f.capsule());
   } finally { dispose(); await f.close(); }
 });
 
-for (const reason of ["pending", "metadata", "mime", "id", "order", "count", "label", "hidden", "hidden-fiber", "portal", "slot", "stale", "alternate", "ambiguous"] as const) {
+for (const reason of ["metadata", "mime", "id", "order", "count", "label", "hidden", "hidden-fiber", "portal", "slot", "stale", "alternate", "ambiguous"] as const) {
   test(`unproven ${reason} row stays native`, async () => {
     const f = fixture(); let props: Props = defaults;
-    if (reason === "pending") props = { ...defaults, isPending: true };
     if (reason === "metadata") props = { ...defaults, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, provider: "other" } }, file] };
     if (reason === "mime") props = { ...defaults, attachments: [{ ...quote(), mimeType: "text/markdown" }, file] };
     if (reason === "id") props = { ...defaults, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, identifier: "quote-wrong" } }, file] };
