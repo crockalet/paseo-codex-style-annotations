@@ -125,15 +125,12 @@ test("props-only identity/content changes reset disclosure without replacing the
     await new Promise((resolve) => setTimeout(resolve, 1050));
     assert.notEqual(f.capsule(), current.element); assert.equal(controls(f).panel.hidden, true);
     assert.equal(controls(f).shadow.querySelector("pre")!.textContent, "changed text with same native label");
-    await f.render({ ...defaults, isPending: true }); assert.equal(f.capsule(), null);
-    await f.render(defaults); assert.ok(f.capsule());
   } finally { dispose(); await f.close(); }
 });
 
-for (const reason of ["pending", "metadata", "mime", "id", "order", "count", "label", "hidden", "hidden-fiber", "portal", "slot", "stale", "alternate", "ambiguous"] as const) {
+for (const reason of ["metadata", "mime", "id", "order", "count", "label", "hidden", "hidden-fiber", "portal", "slot", "stale", "alternate", "ambiguous"] as const) {
   test(`unproven ${reason} row stays native`, async () => {
     const f = fixture(); let props: Props = defaults;
-    if (reason === "pending") props = { ...defaults, isPending: true };
     if (reason === "metadata") props = { ...defaults, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, provider: "other" } }, file] };
     if (reason === "mime") props = { ...defaults, attachments: [{ ...quote(), mimeType: "text/markdown" }, file] };
     if (reason === "id") props = { ...defaults, attachments: [{ ...quote(), externalResource: { ...quote().externalResource, identifier: "quote-wrong" } }, file] };

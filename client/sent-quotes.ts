@@ -7,7 +7,7 @@ const NATIVE = '[data-testid="user-message"]';
 const OWNED = "data-paseo-sent-quotes";
 const owners = new WeakSet<Document>();
 const HIDDEN = "data-paseo-sent-quote-hidden";
-const propsSchema = z.object({ serverId: z.string().min(1), agentId: z.string().min(1), messageId: z.string().min(1),
+const propsSchema = z.object({ serverId: z.string().min(1), agentId: z.string().min(1), messageId: z.string().min(1).optional(),
   message: z.string(), images: z.array(z.unknown()).default([]), attachments: z.array(z.unknown()).default([]), isPending: z.boolean().default(false) });
 const quoteSchema = z.object({ type: z.literal("text"), mimeType: z.literal("text/plain"), text: z.string(),
   externalResource: z.object({ provider: quotePluginIdSchema, resourceType: z.literal("quote"), id: z.string().uuid(),
@@ -21,7 +21,8 @@ function isFiber(value: unknown): value is Fiber {
 }
 type Root = { current: unknown };
 type Quote = Readonly<{ id: string; title: string; text: string }>;
-type SentRow = Readonly<{ identity: readonly [string, string, string]; native: HTMLElement; slot: HTMLElement; labelText: HTMLElement;
+type SentRowIdentity = Readonly<{ kind: "provisional"; localId: string }> | Readonly<{ kind: "canonical"; messageId: string }>;
+type SentRow = Readonly<{ serverId: string; agentId: string; row: HTMLElement; localId: string; identity: SentRowIdentity; pending: boolean; native: HTMLElement; slot: HTMLElement; labelText: HTMLElement;
   quotes: readonly Quote[]; frames: readonly HTMLElement[]; rootOnly: boolean; content: string; root: Root; current: unknown }>;
 type Override = Readonly<{ element: HTMLElement; value: string; priority: string; token: string }>;
 type Decoration = { row: SentRow; element: HTMLDivElement; popup: HTMLDivElement; button: HTMLButtonElement; panel: HTMLDivElement;
@@ -129,8 +130,14 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
     const current = committed.current, owner = committed.rows.get(native);
     if (!owner) return;
     const parsed = propsSchema.safeParse(owner.memoizedProps);
-    if (!parsed.success || parsed.data.isPending || native.getAttribute("aria-busy") !== "false") return;
+    if (!parsed.success || native.getAttribute("aria-busy") !== String(parsed.data.isPending)) return;
     const props = parsed.data;
+    const localId = row.getAttribute("data-message-id");
+    if (!localId?.trim() || (row.hasAttribute("data-history-row-id") && row.getAttribute("data-history-row-id") !== localId)) return;
+    let identity: SentRowIdentity;
+    if (props.messageId !== undefined) identity = { kind: "canonical", messageId: props.messageId };
+    else if (props.isPending) identity = { kind: "provisional", localId };
+    else return;
     const quotes = props.attachments.flatMap((attachment, index) => {
       const value = quoteSchema.safeParse(attachment);
       return value.success ? [{ index, ...value.data.externalResource, text: value.data.text }] : [];
@@ -182,12 +189,16 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
     const rootOnly = !props.message.trim() && props.images.length === 0 && quotes.length === props.attachments.length &&
       !native.querySelector('button,[role="button"],input,textarea,select,a[href],img,video,audio,canvas,[data-message-text],[data-testid="user-message-trailing-row"]');
     if (root.current !== current) return;
-    return { identity: [props.serverId, props.agentId, props.messageId], native, slot, root, current, labelText: frames[quotes[0].index].labels[0].titleHosts[0],
+    return { serverId: props.serverId, agentId: props.agentId, row, localId, identity, pending: props.isPending, native, slot, root, current, labelText: frames[quotes[0].index].labels[0].titleHosts[0],
       quotes: quotes.map(({ id, title, text }) => ({ id, title, text })), frames: quotes.map((quote) => nodes[quote.index]), rootOnly,
-      content: JSON.stringify([props.serverId, props.agentId, props.messageId, props.message, props.images, props.attachments, rootOnly]) };
+      content: JSON.stringify([props.serverId, props.agentId, props.message, props.images, props.attachments, rootOnly]) };
   }
   function sameRow(a: SentRow, b: SentRow): boolean {
-    return a.native === b.native && a.slot === b.slot && a.labelText === b.labelText && a.content === b.content && a.root === b.root &&
+    const compatible = a.identity.kind === "provisional"
+      ? b.identity.kind === "canonical" || a.identity.localId === b.identity.localId
+      : b.identity.kind === "canonical" && a.identity.messageId === b.identity.messageId;
+    return compatible && a.serverId === b.serverId && a.agentId === b.agentId && a.row === b.row && a.localId === b.localId &&
+      a.native === b.native && a.slot === b.slot && a.labelText === b.labelText && a.content === b.content && a.root === b.root &&
       a.frames.length === b.frames.length && a.frames.every((frame, index) => frame === b.frames[index]);
   }
   function ownsOverride(entry: Override): boolean {
@@ -220,6 +231,7 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
   function create(row: SentRow): Decoration {
     const element = doc.createElement("div");
     element.setAttribute(OWNED, "capsule");
+    element.setAttribute("aria-busy", String(row.pending));
     element.setAttribute("contenteditable", "true"); element.setAttribute("aria-readonly", "true");
     Object.assign(element.style, { display: "flex", justifyContent: "flex-end", alignSelf: "flex-end", maxWidth: "100%", marginBottom: "6px", order: "0" });
     const shadow = element.attachShadow({ mode: "open" });
@@ -231,6 +243,7 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
     const popupShadow = popup.attachShadow({ mode: "open" });
     popupShadow.innerHTML = `<style>${CSS}</style><div class="panel" contenteditable="false" role="region" aria-label="已发送的注释" hidden><header>注释</header></div>`;
     const panel = popupShadow.querySelector<HTMLDivElement>(".panel")!; panel.tabIndex = -1;
+    panel.setAttribute("aria-label", row.pending ? "注释" : "已发送的注释");
     button.querySelector("span")!.textContent = `${row.quotes.length} 条注释`;
     for (const [index, quote] of row.quotes.entries()) {
       const entry = doc.createElement("section"); entry.className = "entry";
@@ -300,6 +313,8 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
         }
       } else {
         decoration.row = row;
+        decoration.element.setAttribute("aria-busy", String(row.pending));
+        decoration.panel.setAttribute("aria-label", row.pending ? "注释" : "已发送的注释");
         annotationPalette(decoration.element, row.labelText, row.slot); annotationPalette(decoration.popup, row.labelText, row.slot);
       }
       place(decoration); active.add(native);
@@ -315,7 +330,7 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
     if (changes.some((change) => !owned(change.target) && !(change.type === "childList" && [...change.addedNodes, ...change.removedNodes].every(owned)))) schedule();
   });
   observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: true,
-    attributeFilter: ["class", "style", "hidden", "aria-hidden", "aria-busy", "data-message-id", "data-testid", HIDDEN] });
+    attributeFilter: ["class", "style", "hidden", "aria-hidden", "aria-busy", "data-message-id", "data-history-row-id", "data-testid", HIDDEN] });
   const onOutside = (event: Event) => { for (const decoration of decorations.values()) if (!event.composedPath().includes(decoration.element) && !event.composedPath().includes(decoration.popup)) decoration.close(); };
   const onViewport = () => { for (const decoration of decorations.values()) place(decoration); };
   const onVisible = () => { if (doc.visibilityState === "visible") schedule(); };

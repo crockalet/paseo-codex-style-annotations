@@ -4,6 +4,12 @@ import { startSideChat } from "./actions";
 import { formatQuote, type QuoteSource } from "./format";
 import { installSentQuotes } from "./sent-quotes";
 import { installQuoteComposer } from "./quote-composer";
+import type { ExternalOffer, ExternalSelection } from "./host-source-bridge";
+import type { AnnotationPreferences } from "./annotation-preferences";
+import type { AnnotationKind } from "../shared/preferences";
+import type { StoreBinding } from "./host-draft-bridge";
+import type { SettingsLanguage } from "./settings-language";
+import { toolbarCopy } from "./toolbar-copy";
 
 /*
  * Web and desktop only. iOS and Android route selection through the platform
@@ -112,6 +118,7 @@ interface DomElement extends DomNode {
   focus(options?: { preventScroll?: boolean }): void;
 }
 
+interface DomSelect extends DomElement { value: string; disabled: boolean; }
 interface DomButton extends DomElement {
   disabled: boolean;
 }
@@ -163,7 +170,7 @@ declare const window: DomEventTarget & {
 declare const document: DomEventTarget & {
   readonly body: DomElement;
   readonly activeElement: DomElement | null;
-  createElement(tag: "div"): DomElement;
+  createElement(tag: "div" | "option"): DomElement;
   createElement(tag: "textarea"): DomTextArea;
   execCommand(command: "insertText", showUi: boolean, value: string): boolean;
 };
@@ -321,26 +328,46 @@ function luminance([r, g, b]: Rgba): number {
 
 function applyPalette(host: DomElement, anchor: DomElement): void {
   const style = window.getComputedStyle(anchor);
-  const foreground = parseColor(style.color) ?? [220, 220, 220, 1];
+  const candidate: Rgba = parseColor(style.color) ?? [220, 220, 220, 1];
   let background: Rgba | null = null;
   for (let node: DomElement | null = anchor; node && !background; node = node.parentElement) {
     const color = parseColor(window.getComputedStyle(node).backgroundColor);
     if (color && color[3] > 0.95) background = color;
   }
-  background ??= luminance(foreground) > 0.5 ? [24, 24, 27, 1] : [250, 250, 250, 1];
+  background ??= luminance(candidate) > 0.5 ? [24, 24, 27, 1] : [250, 250, 250, 1];
+  const relativeLuminance = ([r, g, b]: Rgba): number => {
+    const linear = (channel: number): number => {
+      const value = Math.round(channel) / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+  };
+  const contrast = (a: Rgba, b: Rgba): number => {
+    const first = relativeLuminance(a), second = relativeLuminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
+  const black: Rgba = [0, 0, 0, 1], white: Rgba = [255, 255, 255, 1];
+  const neutral = (surface: Rgba): Rgba => contrast(black, surface) >= contrast(white, surface) ? black : white;
+  let foreground = candidate[3] > 0.95 && contrast(candidate, background) >= 4.5 ? candidate : neutral(background);
   const dark = luminance(background) < 0.5;
-  const surface = mix(background, foreground, dark ? 0.07 : 0.025);
+  let surface = mix(background, foreground, dark ? 0.07 : 0.025);
+  if (contrast(foreground, surface) < 4.5) {
+    foreground = neutral(background);
+    surface = mix(background, foreground, dark ? 0.07 : 0.025);
+    if (contrast(foreground, surface) < 4.5) surface = background;
+  }
+  const mutedCandidate = mix(surface, foreground, 0.68);
+  const muted = contrast(mutedCandidate, surface) >= 4.5 ? mutedCandidate : foreground;
 
   const tokens: Array<[string, string]> = [
     ["--pq-fg", css(foreground)],
-    ["--pq-muted", css(foreground, 0.62)],
-    ["--pq-faint", css(foreground, 0.42)],
+    ["--pq-muted", css(muted)],
+    ["--pq-disabled", css(muted)],
+    ["--pq-scheme", neutral(surface) === white ? "dark" : "light"],
     ["--pq-border", css(foreground, dark ? 0.16 : 0.14)],
     ["--pq-hover", css(foreground, 0.09)],
     ["--pq-bg", css(surface)],
-    ["--pq-field", css(background)],
     ["--pq-primary-fg", css(background)],
-    ["--pq-danger", dark ? "#f87171" : "#dc2626"],
     ["--pq-shadow", dark ? "0 12px 32px rgba(0, 0, 0, 0.5)" : "0 12px 32px rgba(0, 0, 0, 0.16)"],
     ["--pq-font", style.fontFamily || "system-ui, sans-serif"],
   ];
@@ -349,45 +376,60 @@ function applyPalette(host: DomElement, anchor: DomElement): void {
 
 const STYLE = `
 :host{all:initial}*{box-sizing:border-box}
-.panel{font-family:var(--pq-font);font-size:13px;line-height:18px;color:var(--pq-fg);background:var(--pq-bg);border:1px solid var(--pq-border);border-radius:10px;box-shadow:var(--pq-shadow);user-select:none;-webkit-user-select:none}
-.bar{display:flex;align-items:center;gap:2px;padding:3px}
+.panel{font-family:var(--pq-font);font-size:13px;line-height:18px;color:var(--pq-fg);background:var(--pq-bg);color-scheme:var(--pq-scheme);border:1px solid var(--pq-border);border-radius:10px;box-shadow:var(--pq-shadow);user-select:none;-webkit-user-select:none}
+.bar{display:flex;align-items:center;gap:2px;padding:3px;max-width:calc(100vw - 16px)}
+.add-group{display:flex;align-items:center;min-width:0;border-radius:7px}
+.add-group:hover{background:var(--pq-hover)}
+[data-action="quote"]{display:block;min-width:0;padding-right:5px;overflow:hidden;text-overflow:ellipsis}
+.add-group button:hover:not(:disabled){background:transparent}
+[data-action="side"]{flex-shrink:0;max-width:46vw;overflow:hidden;text-overflow:ellipsis;display:block}
+.receiver-switch{position:relative;display:flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;align-self:stretch;color:var(--pq-muted);border-radius:7px}
+.receiver-switch:has(select:focus-visible){outline:2px solid var(--pq-muted);outline-offset:-2px}
+button:focus-visible{outline:2px solid var(--pq-fg);outline-offset:1px}
+.receiver-switch svg{pointer-events:none}
+select[data-receiver]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font:inherit}
+option{color:var(--pq-fg);background:var(--pq-bg)}
 button{appearance:none;display:inline-flex;align-items:center;gap:6px;margin:0;padding:5px 9px;border:0;border-radius:7px;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:pointer}
-button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:.4;cursor:default}button[hidden]{display:none}
+button:hover:not(:disabled){background:var(--pq-hover)}button:disabled{opacity:1;color:var(--pq-disabled);background:transparent;cursor:default}button[hidden]{display:none}
 .editor{display:none;width:min(300px,calc(100vw - 16px));padding:4px}
 .panel[data-mode="side"] .bar{display:none}
-.panel[data-mode="side"] .editor{display:block}
-.panel[data-mode="side"] .editor{width:min(400px,calc(100vw - 16px));padding:10px}
+.panel[data-mode="side"] .editor{display:block;width:min(400px,calc(100vw - 16px));padding:10px}
 .quote{display:none;max-height:54px;overflow:hidden;padding-left:9px;border-left:2px solid var(--pq-border);color:var(--pq-muted);white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:8px}
 .panel[data-mode="side"] .quote{display:block}
 .footer{display:flex;align-items:center;justify-content:flex-end;gap:2px}.status{flex:1 1 auto;font-size:11px;color:var(--pq-muted);overflow-wrap:anywhere;padding:0 5px}.status:empty{display:none}
 .primary{background:var(--pq-fg);color:var(--pq-primary-fg)}
+.selection-status{max-width:240px;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:11px;padding:0 5px;color:var(--pq-muted)} [hidden]{display:none!important}
 `;
 const MARKUP = `
 <style>${STYLE}</style>
 <div class="panel" data-mode="bar" contenteditable="false">
- <div class="bar" role="toolbar" aria-label="选中文字">
-  <button data-action="quote">添加到对话</button>
-  <button data-action="side">在侧边聊天中提问</button>
+ <div class="bar" role="toolbar">
+  <div class="add-group"><button data-action="quote"></button><span class="receiver-switch" hidden><svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 4.5 3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><select data-receiver></select></span></div>
+  <span class="selection-status" role="status" hidden></span>
+  <button data-action="side"></button>
  </div>
  <div class="editor">
   <div class="quote"></div><slot name="input"></slot>
-  <div class="footer"><span class="status" role="status"></span><button data-action="cancel">Cancel</button><button data-action="ask" class="primary">Ask</button></div>
+  <div class="footer"><span class="status" role="status"></span><button data-action="cancel"></button><button data-action="ask" class="primary"></button></div>
  </div>
 </div>`;
 
+type ReceiverChoice = { mode: "automatic" | "manual"; binding: StoreBinding | null };
+
 type Interaction =
  | { kind: "hidden" }
+ | { kind: "external"; selection: NonNullable<ExternalSelection>; choice: ReceiverChoice }
  | { kind: "selection"; snapshot: Snapshot }
- | { kind: "side"; snapshot: Snapshot; status: "editing" | "sending" };
+ | { kind: "side"; snapshot: Snapshot; status: "editing" | "sending"; notice: { kind: "hint" } | { kind: "error"; message: string } };
 const GAP = 8;
 function clamp(value: number, min: number, max: number): number {
  return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
 /** Installs the selection bar. Returns cleanup; a no-op off the web. */
-export function installSelectionBar(client: PluginClientContext): () => void {
+export function installSelectionBar(client: PluginClientContext, preferences?: AnnotationPreferences, language?: SettingsLanguage): () => void {
  if (Platform.OS !== "web" || typeof document === "undefined") return () => {};
- const quotes = installQuoteComposer();
+ const quotes = installQuoteComposer({ preferences });
  const removeSentQuotes = installSentQuotes();
  const host = document.createElement("div");
  host.setAttribute("data-paseo-quote", "");
@@ -399,6 +441,10 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const panel = shadow.querySelector(".panel")!;
  const quotePreview = shadow.querySelector(".quote")!;
  const status = shadow.querySelector(".status")!;
+ const bar = shadow.querySelector(".bar")!;
+ const receiverSwitch = shadow.querySelector(".receiver-switch")!;
+ const selectionStatus = shadow.querySelector(".selection-status")!;
+ const receiver = shadow.querySelector("select[data-receiver]") as DomSelect;
  const button = (action: string) => shadow.querySelector(`[data-action="${action}"]`) as DomButton;
  const field = document.createElement("textarea");
  field.setAttribute("slot", "input");
@@ -416,6 +462,10 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  let pending = 0;
  let disposed = false;
  let composing = false;
+ let consumedOffer: ExternalOffer | null = null;
+ let externalKind: AnnotationKind | null = null;
+ let externalError: string | null = null;
+ const copy = () => toolbarCopy[language?.getSnapshot() ?? "en"];
 
  const place = (anchor: DomRect, prefer: "above" | "below") => {
   const width = panel.offsetWidth;
@@ -432,15 +482,103 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const hide = () => { interaction = { kind: "hidden" }; host.style.setProperty("display", "none", "important"); };
  const showBar = (snapshot: Snapshot) => {
   interaction = { kind: "selection", snapshot };
+  receiverSwitch.hidden = true; button("side").hidden = false;
   panel.setAttribute("data-mode", "bar");
   host.setAttribute("contenteditable", "true");
-  button("quote").disabled = !snapshot.composer || !snapshot.agentId;
   button("side").disabled = !snapshot.agentId;
   applyPalette(host, snapshot.anchor);
   host.style.setProperty("display", "block", "important");
-  place(snapshot.first, "above");
+  refreshCopy(); void preferences?.refresh();
  };
+ const showExternal = (selection: NonNullable<ExternalSelection>) => {
+  if (interaction.kind === "side") return;
+  const previous = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer.selectionToken === selection.offer.selectionToken ? interaction.choice : null;
+  const candidates = selection.kind === "offer" ? selection.offer.recipients : [];
+  const manual = previous?.mode === "manual" && previous.binding ? candidates.find((item) => item.hostId === previous.binding?.hostId && item.agentId === previous.binding?.agentId && item.draftKey === previous.binding?.draftKey && item.validate()) : null;
+  const choice: ReceiverChoice = previous?.mode === "manual" && (!previous.binding || manual)
+   ? { mode: "manual", binding: manual ?? null }
+   : { mode: "automatic", binding: selection.kind === "offer" ? selection.offer.preferred : null };
+  const recipient = choice.binding;
+  const sameOffer = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer === selection.offer;
+  interaction = { kind: "external", selection, choice };
+  if (!sameOffer) { externalKind = null; externalError = null; }
+  panel.setAttribute("data-mode", "bar"); button("side").hidden = true;
+  receiverSwitch.hidden = !candidates.length; receiver.innerHTML = "";
+  const placeholder = document.createElement("option"); placeholder.setAttribute("value", ""); placeholder.textContent = copy().chooseReceiver; receiver.appendChild(placeholder);
+  candidates.forEach((candidate, i) => { const option = document.createElement("option"); option.setAttribute("value", String(i)); option.textContent = candidate.label; receiver.appendChild(option); });
+  receiver.value = recipient ? String(candidates.indexOf(recipient)) : "";
+  const root = selection.kind === "offer" ? selection.offer.root : selection.root;
+  applyPalette(host, root as unknown as DomElement); host.style.setProperty("display", "block", "important");
+  refreshCopy();
+  if (selection.kind === "offer" && !sameOffer) {
+   void selection.offer.snapshot.then((snapshot) => { if (interaction.kind === "external" && interaction.selection === selection) { externalKind = snapshot.origin.kind; updatePolicy(); } }).catch((cause) => { if (interaction.kind === "external" && interaction.selection === selection) { externalError = cause instanceof Error ? cause.message : String(cause); updatePolicy(); } });
+   void preferences?.refresh();
+  }
+ };
+ const changeReceiver: DomListener = () => {
+  if (interaction.kind !== "external" || interaction.selection.kind !== "offer") return;
+  interaction = { ...interaction, choice: { mode: "manual", binding: receiver.value === "" ? null : interaction.selection.offer.recipients[Number(receiver.value)] ?? null } };
+  refreshCopy();
+ };
+ receiver.addEventListener("change", changeReceiver);
+ const updatePolicy = () => {
+  if (interaction.kind === "hidden" || interaction.kind === "side") return;
+  const kind = interaction.kind === "selection" ? "chat" : externalKind;
+  const state = preferences?.state();
+  const enabled = !preferences || (kind !== null && preferences.enabled(kind));
+  const messages = copy();
+  const problem = state?.status === "error" ? messages.settingsError(state.error) : state?.status === "loading" ? messages.settingsLoading : !enabled && kind ? messages.disabled : "";
+  const unavailable = interaction.kind === "external" ? externalError ?? (interaction.selection.kind === "unavailable" ? interaction.selection.reason : interaction.selection.offer.recipients.length ? "" : messages.noReceiver) : "";
+  selectionStatus.textContent = unavailable || problem;
+  selectionStatus.hidden = !selectionStatus.textContent;
+  button("quote").disabled = Boolean(unavailable) || !enabled || (interaction.kind === "selection" ? !interaction.snapshot.composer || !interaction.snapshot.agentId : !interaction.choice.binding);
+ };
+ const refreshCopy = () => {
+  const messages = copy();
+  bar.setAttribute("aria-label", messages.selection);
+  const recipient = interaction.kind === "external" ? interaction.choice.binding : null;
+  const action = recipient ? messages.addTo(recipient.label) : messages.add;
+  button("quote").textContent = action;
+  button("quote").setAttribute("aria-label", action);
+  button("quote").setAttribute("title", action);
+  const receiverLabel = recipient ? messages.receiverFor(recipient.label) : messages.receiver;
+  receiver.setAttribute("aria-label", receiverLabel);
+  receiver.setAttribute("title", receiverLabel);
+  const placeholder = receiver.querySelector('option[value=""]');
+  if (placeholder) placeholder.textContent = messages.chooseReceiver;
+  button("side").textContent = messages.side;
+  button("cancel").textContent = messages.cancel;
+  button("ask").textContent = messages.ask;
+  field.placeholder = messages.questionPlaceholder;
+  field.setAttribute("aria-label", messages.question);
+  if (interaction.kind === "side") {
+   status.textContent = interaction.notice.kind === "error" ? interaction.notice.message : messages.questionHint;
+   place(interaction.snapshot.last, "below");
+  } else {
+   updatePolicy();
+   if (interaction.kind === "selection") place(interaction.snapshot.first, "above");
+   else if (interaction.kind === "external") {
+    const selection = interaction.selection;
+    const root = selection.kind === "offer" ? selection.offer.root : selection.root;
+    const geometry = selection.kind === "offer" ? selection.offer.source.geometry() : null;
+    place(geometry?.kind === "visible" ? geometry.rects[0] : root.getBoundingClientRect(), "above");
+   }
+  }
+ };
+ refreshCopy();
+ const stopLanguage = language?.subscribe(refreshCopy) ?? (() => {});
+ const stopPolicy = preferences?.subscribe(updatePolicy) ?? (() => {});
+ const stopExternal = quotes.observeExternal((selection) => {
+  if (disposed || interaction.kind === "side") return;
+  if (selection?.kind === "offer" && selection.offer === consumedOffer) return;
+  if (selection) showExternal(selection); else if (interaction.kind === "external") hide();
+ });
  const quote = () => {
+  if (interaction.kind === "external") {
+   const current = interaction;
+   if (current.selection.kind !== "offer" || !current.choice.binding) return;
+   consumedOffer = current.selection.offer; hide(); void quotes.addExternal(current.selection.offer, current.choice.binding); return;
+  }
   if (interaction.kind !== "selection") return;
   const snapshot = interaction.snapshot;
   if (!snapshot.composer || !snapshot.agentId) return;
@@ -450,19 +588,16 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const openSide = () => {
   if (interaction.kind !== "selection") return;
   const snapshot = interaction.snapshot;
-  interaction = { kind: "side", snapshot, status: "editing" };
+  interaction = { kind: "side", snapshot, status: "editing", notice: { kind: "hint" } };
   panel.setAttribute("data-mode", "side");
   host.setAttribute("contenteditable", "true");
   quotePreview.textContent = snapshot.preview;
   field.value = "";
   field.rows = 3;
-  field.placeholder = "Ask about this in a side chat…";
-  field.setAttribute("aria-label", "Side chat question");
   field.readOnly = false;
-  status.textContent = "Enter · Ask     Shift+Enter · New line";
+  refreshCopy();
   button("ask").disabled = false;
   button("cancel").disabled = false;
-  place(snapshot.last, "below");
   field.focus({ preventScroll: true });
  };
  const askSide = () => {
@@ -480,15 +615,15 @@ export function installSelectionBar(client: PluginClientContext): () => void {
    hide();
   }).catch((cause: unknown) => {
    if (disposed) return;
-   interaction = current;
+   interaction = { ...current, notice: { kind: "error", message: cause instanceof Error ? cause.message : String(cause) } };
    field.readOnly = false;
    button("ask").disabled = false;
    button("cancel").disabled = false;
-   status.textContent = cause instanceof Error ? cause.message : String(cause);
+   refreshCopy();
   });
  };
  const actions: Record<string, () => void> = { quote, side: openSide, cancel: hide, ask: askSide };
- const onPanelPointerDown: DomListener = (event) => { if (event.target !== field) event.preventDefault(); };
+ const onPanelPointerDown: DomListener = (event) => { if (event.target !== field && event.target !== receiver) event.preventDefault(); };
  const onPanelClick: DomListener = (event) => {
   const target = elementOf(event.target)?.closest("button[data-action]") as DomButton | null;
   const action = target?.getAttribute("data-action");
@@ -509,7 +644,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  const onHostKeyDown: DomListener = (raw) => {
   const event = raw as DomKeyboardEvent;
   if (event.target === field || composing || event.isComposing || event.keyCode === 229 || event.key !== "Escape") return;
-  if (interaction.kind === "selection") { event.preventDefault(); event.stopPropagation(); hide(); }
+  if (interaction.kind === "selection" || interaction.kind === "external") { event.preventDefault(); event.stopPropagation(); hide(); }
  };
  const onCompositionStart: DomListener = () => { composing = true; };
  const onCompositionEnd: DomListener = () => { composing = false; };
@@ -542,7 +677,7 @@ export function installSelectionBar(client: PluginClientContext): () => void {
  window.addEventListener("resize", onViewportChange);
  return () => {
   disposed = true;
-  quotes.dispose();
+  stopLanguage(); stopPolicy(); stopExternal(); receiver.removeEventListener("change", changeReceiver); quotes.dispose();
   removeSentQuotes();
   window.clearTimeout(pending);
   document.removeEventListener("pointerdown", onPointerDown, true);

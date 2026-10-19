@@ -1,88 +1,73 @@
-# Codex Style Chat Annotations
+# Codex Style Annotations
 
-Select text in a Paseo agent chat, attach it as an annotation, and add an optional comment.
-Draft and sent annotations collapse into an **n 条注释** capsule. You can also ask about a
-selection in a side chat.
+[English](README.md) | [Simplified Chinese](README.zh-CN.md)
 
-![Codex Style Chat Annotations illustrated preview using sample data](assets/preview.png)
+Attach selected text from a Paseo chat, file editor, Markdown preview, Diff, or terminal to a conversation. Add an optional comment, edit it later, and return to the source when its position is still available.
 
-The preview illustrates the interface with sample data.
+![Illustrated annotation preview with sample data](assets/preview.png)
+
+The published `v0.1.1` release supports chat annotations. Workspace sources, annotation-type settings, and the other updates described here are available on this branch and have not yet been released.
 
 ## Install
 
-Codex Style Chat Annotations requires Paseo 0.11.2 or later.
-Enable plugins in **Settings > Plugins**. Disable the original `quote` plugin before enabling
-Codex Style Chat Annotations. Running both is unsupported.
+This branch requires Paseo 0.11.4 or later with native plugin Settings support. Enable plugins in **Settings > Plugins**. If the original `quote` plugin is installed, disable it before enabling this plugin.
 
 ```bash
 paseo plugin disable quote
-paseo plugin add git:xzthemeofsss/paseo-quote-notes --ref v0.1.1
+paseo plugin add git:xzthemeofsss/paseo-codex-style-annotations --ref v0.1.1
 ```
 
-Skip the disable command if the original plugin is not installed. The new runtime ID is
-`quote-notes`. Existing draft and sent attachments owned by `quote` remain readable.
-Editing a legacy draft preserves its identity and metadata. New annotations use `quote-notes`.
+The command pins the published chat-only release. Skip the disable command if `quote` is not installed. The runtime ID remains `quote-notes`; existing `quote` annotations remain readable, and edits preserve their identity.
 
 ## Add and edit annotations
 
-Select chat text and click **添加到对话**. The annotation appears immediately. Add a comment
-in **添加可选评论...**, or leave it empty and edit it later. Adding an annotation does not
-send a message. Send the draft with Paseo's normal message controls.
+Select text and choose **Add to chat**. For workspace sources, **Add to {chat}** shows the receiving conversation. It defaults to the most recently focused chat in the same workspace. Use the arrow to choose another chat. An open composer is not required.
 
-In the new comment field, **Enter**, **Esc**, or leaving the field saves the current comment.
-**Shift+Enter** inserts a line break. IME composition does not confirm the comment.
+The annotation appears immediately. Enter a comment or leave it empty. Adding an annotation does not send a message; send it through Paseo's normal composer controls.
 
-Hover or focus the **n 条注释** capsule to read the summary. Click to pin it. Click **编辑**
-or a numbered source marker to open the edit card. The card stages changes until you click
-**保存**, **Cmd+Enter** on macOS, or **Ctrl+Enter** elsewhere. **Enter** inserts a line break.
-**取消**, **Esc**, or clicking outside discards unsubmitted changes. The trash button removes
-that annotation.
+For a new comment, **Enter**, **Esc**, or leaving the field saves the text. **Shift+Enter** inserts a line break. Input-method composition does not confirm a comment.
 
-Saving and deleting lock the card until the operation settles. If persistence is unconfirmed,
-the attempted operation remains available for retry. Dismissing the card after an attempt
-does not undo that operation. Resolve write errors before reloading or disabling the plugin.
-Unsaved retry text lives only in memory.
+Hover or focus the annotation-count capsule to preview its entries. Click to keep it open. Open an entry's edit card to change its comment or delete the annotation. In that card, **Enter** inserts a line break. Save commits the changes, including with **Cmd+Enter** on macOS or **Ctrl+Enter** elsewhere. Cancel, **Esc**, or clicking outside discards unsubmitted edits.
 
-Click a summary entry to return to its source. Source positions reset after a reload or source
-replacement. **原文位置不可用** disables navigation while editing and removal remain available.
-Quotes and saved comments persist in Paseo's native draft store.
+If a save or deletion is unconfirmed, resolve the error before reloading or disabling the plugin. Retry text is held only in memory. Closing the card does not undo an operation already attempted.
 
-## Read sent annotations
+Click a summary entry to return to its source. Source loss does not prevent draft editing or removal. Saved text remains readable.
 
-Click the sent **n 条注释** capsule, or press **Enter** or **Space**, to expand the complete
-sent texts. **复制全文** copies an entry. **Esc** returns focus to the capsule, and clicking
-outside closes it. Sent annotations are read only.
+## Choose sources and language
 
-Paseo drops the separate comment metadata when sending. The expanded view keeps the complete
-sent text, including the comment, without inferring a split. Unsupported and pending message
-rows retain their native attachment cards. Disabling Codex Style Chat Annotations
-restores the native cards.
+Open **Settings > Plugins > Codex Style Annotations > Annotation types** to enable or disable chat, file, Diff, Markdown, and terminal capture separately. All five start enabled. Settings belong to the host installation. Turning a type off affects new annotations; saved annotations and chat side questions remain available.
 
-## Ask in a side chat
+Settings load at startup and are checked again before each addition. Read failures and save conflicts stay visible without resetting saved values.
 
-Select **在侧边聊天中提问**, enter a question, and press **Enter** or **Ask**. This creates a
-child agent with the parent's provider, model, mode, and thinking level. The child receives
-the selection, the source message when found, and up to eight recent main-chat turns.
-The panel accepts follow-ups. **Open as tab** opens the child as a regular chat tab with the
-full Paseo renderer.
+Settings, the selection toolbar, and the side-question editor follow Paseo's English or Chinese language setting. Other languages use English. Some annotation popovers still display Chinese labels; this guide describes those actions in English.
+
+## Supported sources
+
+| Source | Capture and navigation |
+| --- | --- |
+| Chat | Selected rendered text and the host's Markdown serialization. |
+| File editor | One continuous text range, file path, lines, and document fingerprint. Exact highlighting requires matching content, including unsaved edits. |
+| Markdown preview | Rendered text and a file path, without inferred source lines. |
+| Diff | One continuous file and side in split or unified layout. Mixed files, sides, headers, and gaps are refused. Reopening a Diff does not verify its original line position. Working comparison refs are mutable. |
+| Terminal | Selected text, terminal session, buffer kind, and buffer coordinates. Later output, resizing, closure, or reload can invalidate exact navigation. |
+
+Capture does not use the clipboard or send terminal input. Browser-page capture and side questions from workspace sources are not supported. Very long locator metadata can be refused.
+
+## Read sent annotations and ask side questions
+
+Open a sent annotation-count capsule with a click, **Enter**, or **Space** to read the complete text. Copy an entry with its copy control. **Esc** closes the preview and returns focus. Sent annotations are read only. The complete text includes the comment because Paseo no longer retains it as separate metadata after sending.
+
+Validated pending messages keep the same capsule through confirmation. Unsupported rows and rows shown before the native adapter is ready retain native attachment cards.
+
+For a chat selection, choose **Ask in side chat** and enter a question. The child agent uses the parent's provider, model, mode, and thinking level. It receives the selection, the source message when available, and up to eight recent main-chat turns. Continue in the side panel or open it as a chat tab.
 
 ## Data access and compatibility
 
-Codex Style Chat Annotations is trusted client code. It reads selected chat text,
-the active agent and draft, sent message attachments, and recent conversation text for side chats.
-It stores annotations
-in the existing native draft and writes to the clipboard when you choose to copy an entry.
-When you send the draft, Paseo sends the quote and comment through your configured agent
-provider. Asking in a side chat sends the selection, question, and recent context to that
-provider. The plugin adds no external backend and installs no software at runtime.
+The plugin runs as trusted code. It reads selections, source context, same-workspace agents and drafts, sent attachments, annotation settings, and recent conversation text for side questions. Annotations use Paseo's native draft store. Sending a draft or asking a side question sends that content through the configured agent provider. Copy controls write to the clipboard.
 
-The native draft and sent-message adapters inspect private app interfaces and fetch the app's
-own JavaScript bundles from the same origin. These interfaces are not a stable plugin API.
-Compatibility checks reject unknown contracts, and a Paseo update can require an adapter update.
-The annotation UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. Light themes,
-browser clients, and mobile clients have not been independently verified. Selection actions
-target desktop and web clients. Mobile platforms use their system selection menu. Annotation
-controls currently use Chinese labels, and side chat controls include English.
+Native adapters inspect private app interfaces and fetch Paseo's own JavaScript bundles from the same origin. A Paseo update can require an adapter update. The plugin adds no external backend and installs no software at runtime. Disabling it restores native attachment cards without deleting saved annotations.
+
+The chat UI was checked on macOS with Paseo 0.11.4. Isolated browser checks against the installed 0.12.0-beta.3 renderer cover workspace capture, light and dark toolbars, compact layouts, language changes, and pending capsules. These checks do not certify every running client. Complete browser clients and mobile clients have not been independently verified. Mobile platforms use their system selection menu.
 
 ## Develop
 
@@ -92,14 +77,8 @@ npm run typecheck
 npm test
 ```
 
-The tests load the schema, store, persistence, converter, and keyboard focus resolver from the
-installed macOS Paseo web bundle. Set `PASEO_BUNDLE` to another bundle path when needed. The
-tests do not install the plugin or send agent messages. Runtime imports use Paseo's host
-libraries, so installation needs no preparation command or runtime dependency install.
+The retained tests load native modules from the installed macOS Paseo bundle. Set `PASEO_BUNDLE` to use another bundle. Tests do not install the plugin or send agent messages. Runtime modules come from Paseo, so installation requires no build command or dependency installation.
 
 ## Credits and license
 
-Codex Style Chat Annotations is a fork of
-[paseo-quote by Chechulin Serhii](https://github.com/keefeere/paseo-quote).
-It adds draft annotation editing, source markers, and sent annotation capsules. The original
-[MIT license](LICENSE) and copyright notice are preserved.
+This plugin is a fork of [paseo-quote by Chechulin Serhii](https://github.com/keefeere/paseo-quote). The original [MIT license](LICENSE) and copyright notice are preserved.

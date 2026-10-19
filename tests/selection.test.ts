@@ -38,7 +38,7 @@ test("两文字入口立即添加、紧凑可选评论、连续输入，Enter/Es
   await settle();
   const toolbar = dom.window.document.querySelector("[data-paseo-quote]");
   const shadow = toolbar?.shadowRoot;
-  assert.deepEqual(Array.from(shadow?.querySelectorAll(".bar button") ?? []).map((button) => button.textContent), ["添加到对话", "在侧边聊天中提问"]);
+  assert.deepEqual(Array.from(shadow?.querySelectorAll(".bar button") ?? []).map((button) => button.textContent), ["Add to chat", "Ask in side chat"]);
   assert.equal(shadow?.querySelector('[data-action="reply"],[data-action="send"],[data-action="copy"]'), null);
   const quote = shadow?.querySelector('[data-action="quote"]');
   if (!(quote instanceof dom.window.HTMLButtonElement)) throw new Error("Missing add action");
