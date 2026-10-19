@@ -22,6 +22,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:10p
 .close,.remove,.edit,.footer button{border:0;border-radius:5px;background:transparent;padding:3px 6px;color:var(--quote-muted)}.close:hover,.remove:hover,.edit:hover,.footer button:hover{background:var(--quote-hover)}
 .entries{overflow:auto;overscroll-behavior:contain}.entry{padding:11px 12px}.entry+.entry{border-top:1px solid var(--quote-border)}
 .entry-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--quote-muted)}
+.entry-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.entry-head>.edit,.entry-head>.remove{flex-shrink:0;white-space:nowrap}
 .source{display:block;width:100%;text-align:left;border:0;background:none;padding:0}.comment{margin-top:6px;color:var(--quote-muted);white-space:pre-wrap;overflow-wrap:anywhere}.editor{padding:10px}.footer{display:flex;justify-content:flex-end;gap:6px;margin-top:6px}.status,.location{font-size:11px;color:var(--quote-muted)}pre{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0 0;user-select:text;-webkit-user-select:text}
 .notice{padding:0 12px 10px;color:var(--quote-muted)}.notice:empty{display:none}
 .save-state{font-size:11px;color:var(--quote-muted);margin-top:4px}.retry{border:0;background:transparent;text-decoration:underline;padding:2px 0}
@@ -311,7 +312,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
       if (!row) {
         const element = document.createElement("div"); element.className = "entry";
         const head = document.createElement("div"); head.className = "entry-head";
-        const label = document.createElement("span");
+        const label = document.createElement("span"); label.className = "entry-label";
         const edit = document.createElement("button"); edit.className = "edit"; edit.textContent = "编辑";
         const remove = document.createElement("button"); remove.className = "remove"; remove.textContent = "移除";
         const source = document.createElement("button"); source.className = "source";
@@ -351,9 +352,12 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal)
       }
       const decoded = decodeAnnotation(attachment.item), unsaved = pending.get(scope)?.get(id);
       const external = decodeExternal(attachment.item);
-      const ordinal = external.kind === "external" ? `${index + 1}. ${attachment.item.title}` : `${index + 1}.`, quote = external.kind === "external" ? external.snapshot.text : decoded.kind === "editable" ? decoded.annotation.quote : attachment.item.text;
+      const terminal = external.kind === "external" && external.snapshot.origin.kind === "terminal" ? external.snapshot.origin : null;
+      const title = terminal ? `终端 · 缓冲区 ${terminal.start.y + 1}${terminal.end.y === terminal.start.y ? "" : `-${terminal.end.y + 1}`}` : attachment.item.title;
+      const ordinal = external.kind === "external" ? `${index + 1}. ${title}` : `${index + 1}.`, quote = external.kind === "external" ? external.snapshot.text : decoded.kind === "editable" ? decoded.annotation.quote : attachment.item.text;
       const comment = unsaved?.comment ?? (decoded.kind === "editable" ? decoded.annotation.comment : "");
       if (row.label.textContent !== ordinal) row.label.textContent = ordinal;
+      row.label.title = `${index + 1}. ${attachment.item.title}`;
       if (row.text.textContent !== quote) row.text.textContent = quote;
       if (row.comment.textContent !== comment) row.comment.textContent = comment;
       const position = current.container.children[index];
