@@ -16,12 +16,10 @@ Paseo 0.11.4 or later with native plugin Settings support is required. Disable t
 Codex Style Annotations. Running both is unsupported.
 Existing `quote` draft and sent attachments remain readable, and editing a legacy draft
 preserves its identity. New annotations use `quote-notes`.
-In the plugin's **注释类型** settings, enable or disable chat, file, Diff, Markdown preview, and terminal annotations separately. All five start enabled. The settings belong to that host installation. Turning a type off affects new annotations. Saved annotations remain readable and editable, and chat side questions remain available. Settings load at startup and are checked again before Add. Read failures and save conflicts are visible and do not reset saved values.
-No additional account or token is required. Annotation controls currently use Chinese labels,
-and side chat controls include English.
+In the plugin's **Annotation types** settings, enable or disable chat, file, Diff, Markdown preview, and terminal annotations separately. All five start enabled. The settings belong to that host installation. Turning a type off affects new annotations. Saved annotations remain readable and editable, and chat side questions remain available. Settings load at startup and are checked again before Add. Read failures and save conflicts are visible and do not reset saved values.
+No additional account or token is required. Settings, the selection toolbar, and the side-question editor follow Paseo's English or Chinese language setting, with English as the fallback. Other annotation popovers still use Chinese labels.
 
-The chat UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. External capture has isolated original-module browser coverage against disk renderer 0.12.0-beta.3; the loaded client must also pass its compatibility checks. Light themes,
-browser clients, and mobile clients have not been independently verified. Selection actions
+The chat UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. External capture has isolated original-module browser coverage against disk renderer 0.12.0-beta.3, including light and dark toolbars, compact layouts, language changes, and pending sent capsules. The loaded client must also pass its compatibility checks. Complete browser clients and mobile clients have not been independently verified. Selection actions
 target desktop and web clients. Mobile platforms use their system selection menu.
 
 ## Data access and limits
@@ -36,7 +34,7 @@ The plugin fetches the app's own JavaScript bundles from the same origin to chec
 adapters. It adds no external backend and installs no software at runtime. The adapters use
 private app interfaces, so a Paseo update can require a compatibility update.
 
-External selections name the receiving chat, with an explicit choice when several same-workspace chats are available. Adding from a source does not require an open composer. File selections retain exact text, document fingerprints, and ranges. Markdown retains rendered text and a file path without inferred source lines. Diff captures one continuous file and side; mixed files, sides, hunk headers, and gaps are refused. Working comparison refs are retained as mutable refs, without claiming immutable Git revisions. Terminal positions are buffer coordinates. Capture does not use clipboard or terminal input.
+External selections name the receiving chat and default to the most recently focused conversation in the same workspace. The arrow lets you choose another conversation. Adding from a source does not require an open composer. File selections retain exact text, document fingerprints, and ranges. Markdown retains rendered text and a file path without inferred source lines. Diff captures one continuous file and side; mixed files, sides, hunk headers, and gaps are refused. Working comparison refs are retained as mutable refs, without claiming immutable Git revisions. Terminal positions are buffer coordinates. Capture does not use clipboard or terminal input.
 
 Saved text remains readable after source closure or reload. Exact file highlighting requires matching document content. Otherwise navigation reports a file-only or Diff-only open, or an unavailable position. Terminal output or resizing invalidates exact terminal reveal. External side-chat and browser-page selections are not supported. Saved quotes remain editable when their source is unavailable. Sent annotations keep their complete
 text because Paseo no longer retains the separate comment metadata after sending. Resolve

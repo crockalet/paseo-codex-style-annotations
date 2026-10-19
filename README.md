@@ -25,7 +25,7 @@ Editing a legacy draft preserves its identity and metadata. New annotations use 
 
 ## Add and edit annotations
 
-Select text and click **添加到对话**. External selections show the receiving chat. Choose a receiver when several chats belong to the same workspace. A file, Diff, or terminal can add an annotation without an open composer. The annotation appears immediately. Add a comment
+Select text and click **Add to chat**. External selections show **Add to {chat}** and default to the most recently focused conversation in the same workspace. Use the arrow to choose another conversation. A file, Diff, or terminal can add an annotation without an open composer. The annotation appears immediately. Add a comment
 in **添加可选评论...**, or leave it empty and edit it later. Adding an annotation does not
 send a message. Send the draft with Paseo's normal message controls.
 
@@ -49,7 +49,9 @@ Saved text and comments remain readable after source loss or reload. **原文位
 
 ## Choose annotation types
 
-Open **Settings > Plugins > Codex Style Annotations > 注释类型**. Chat, file, Diff, Markdown preview, and terminal annotation switches default to on. Settings belong to the plugin installation on that host and apply to its authorized clients. Turning a type off prevents new annotations of that type. Saved annotations remain readable and editable. The chat switch keeps **在侧边聊天中提问** available.
+Open **Settings > Plugins > Codex Style Annotations > Annotation types**. Chat, file, Diff, Markdown preview, and terminal annotation switches default to on. Settings belong to the plugin installation on that host and apply to its authorized clients. Turning a type off prevents new annotations of that type. Saved annotations remain readable and editable. The chat switch keeps **在侧边聊天中提问** available.
+
+Settings, the selection toolbar, and the side-question editor follow Paseo's English or Chinese language setting. Other languages use English. Other annotation popovers still use Chinese labels.
 
 Settings load when the plugin starts. Each Add checks the saved settings again, so another client's changes apply before a new annotation is written. Read errors and invalid documents disable new annotation creation until the settings can be read. Use **重试读取** in the settings screen to recover. Failed saves and revision conflicts stay visible and preserve the saved values.
 
@@ -72,8 +74,7 @@ sent texts. **复制全文** copies an entry. **Esc** returns focus to the capsu
 outside closes it. Sent annotations are read only.
 
 Paseo drops the separate comment metadata when sending. The expanded view keeps the complete
-sent text, including the comment, without inferring a split. Unsupported and pending message
-rows retain their native attachment cards. Disabling Codex Style Annotations
+sent text, including the comment, without inferring a split. Validated pending messages use the same capsule before and after confirmation. Unsupported rows and rows shown before the native adapter is ready retain their native attachment cards. Disabling Codex Style Annotations
 restores the native cards.
 
 ## Ask in a side chat
@@ -96,10 +97,8 @@ provider. The plugin adds no external backend and installs no software at runtim
 The native draft, source-selection, and sent-message adapters inspect private app interfaces and fetch the app's
 own JavaScript bundles from the same origin. These interfaces are not a stable plugin API.
 Compatibility checks reject unknown contracts, and a Paseo update can require an adapter update.
-The original chat UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. External capture is covered by isolated original-module browser checks against disk renderer 0.12.0-beta.3. This does not establish the version or behavior of a running client. Light themes,
-browser clients, and mobile clients have not been independently verified. Selection actions
-target desktop and web clients. Mobile platforms use their system selection menu. Annotation
-controls currently use Chinese labels, and side chat controls include English.
+The original chat UI was verified on macOS desktop with Paseo 0.11.4 in a dark theme. External capture is covered by isolated original-module browser checks against disk renderer 0.12.0-beta.3. These checks cover light and dark toolbars, compact layouts, language changes, and pending sent capsules. They do not establish the version or behavior of a running client. Complete browser clients and mobile clients have not been independently verified. Selection actions
+target desktop and web clients. Mobile platforms use their system selection menu.
 
 ## Develop
 
