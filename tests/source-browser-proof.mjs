@@ -17,7 +17,8 @@ const registry = source.split(/(?=__d\(function\()/).flatMap((c) => {
   const end = c.match(/\},\d+,\[[\d,]*\]\);/);
   return end && end.index !== void 0 ? [c.slice(0, end.index + end[0].length)] : [];
 }).join("\n");
-const output = await build({ stdin: { contents: `export * from '${repo}/client/host-source-bridge'; export {resolveModuleIds,createDraftHost} from '${repo}/client/host-draft-bridge'; export {installQuoteComposer} from '${repo}/client/quote-composer'; export {decodeExternal} from '${repo}/client/external-origin';`, resolveDir: repo }, bundle: true, write: false, format: "iife", globalName: "Bridge" });
+const output = await build({ stdin: { contents: `export * from '${repo}/client/host-source-bridge'; export {resolveModuleIds,createDraftHost,MODULE_SIGNATURES,readQuotes} from '${repo}/client/host-draft-bridge'; export {installQuoteComposer} from '${repo}/client/quote-composer'; export {decodeExternal} from '${repo}/client/external-origin';`, resolveDir: repo }, bundle: true, write: false, format: "iife", globalName: "Bridge" });
+const toolbar = await build({ entryPoints: [`${repo}/client/web.ts`], bundle: true, write: false, format: "iife", globalName: "Toolbar", external: ["react-native", "./quote-composer"] });
 const browser = await chromium.launch({ executablePath: process.env.PASEO_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true, args: ["--disable-gpu"] });
 try {
   const page = await browser.newPage({ viewport: { width: 1400, height: 1e3 } });
@@ -57,11 +58,18 @@ try {
       return () => listeners.delete(fn);
     } });
     const tabs = ["diff-one", "diff-two", "file", "markdown", "terminal-one", "terminal-two"].map((id) => ({ tabId: id, target: id.startsWith("diff") ? { kind: "commit_diff", sha: "commit-" + id } : id.startsWith("terminal") ? { kind: "terminal", terminalId: id } : { kind: "file", path: id === "markdown" ? "readme.md" : "src/a.ts" } }));
-    const layoutState = { layoutByWorkspace: { "fixture-host:workspace-one": { root: tabs, parentTabIdByTabId: {} } }, sheetsByWorkspace: {} };
+    const actionIds = Bridge.resolveModuleIds(window.__source, { actions: ["focusTabInLayout", "selectTabInPaneInLayout"] });
+    const actions = r(actionIds.actions), layoutListeners = new Set();
+    const mainTabs = [...tabs, { tabId: "agent-a", target: { kind: "agent", agentId: "agent-one" } }];
+    const sideTabs = [{ tabId: "agent-b", target: { kind: "agent", agentId: "agent-two" } }, { tabId: "side-file", target: { kind: "file", path: "side.ts" } }];
+    const initialLayout = { root: { kind: "group", group: { id: "split", direction: "horizontal", sizes: [.5, .5], children: [{ kind: "pane", pane: { id: "main", tabs: mainTabs, tabIds: mainTabs.map((tab) => tab.tabId), focusedTabId: "agent-a" } }, { kind: "pane", pane: { id: "side", tabs: sideTabs, tabIds: sideTabs.map((tab) => tab.tabId), focusedTabId: "side-file" } }] } }, focusedPaneId: "main", parentTabIdByTabId: {} };
+    const layoutState = { layoutByWorkspace: { "fixture-host:workspace-one": initialLayout }, sheetsByWorkspace: {} };
+    const updateLayout = (next) => { if (next) { layoutState.layoutByWorkspace["fixture-host:workspace-one"] = next; for (const listener of layoutListeners) listener(); } };
+    const focusTab = (tabId) => updateLayout(actions.focusTabInLayout({ layout: layoutState.layoutByWorkspace["fixture-host:workspace-one"], tabId }));
+    const selectSideTab = (tabId) => updateLayout(actions.selectTabInPaneInLayout({ layout: layoutState.layoutByWorkspace["fixture-host:workspace-one"], paneId: "side", tabId }));
     o.set(ids.sessions, { useSessionStore: sessionStore });
     o.set(3659, { useSessionStore: sessionStore });
-    o.set(ids.layout, { useWorkspaceLayoutStore: { getState: () => layoutState, subscribe: () => () => {
-    } }, collectAllTabs: (root) => root, findPaneById: () => null });
+    o.set(ids.layout, { useWorkspaceLayoutStore: { getState: () => layoutState, subscribe: (listener) => { layoutListeners.add(listener); return () => layoutListeners.delete(listener); } }, collectAllTabs: actions.collectAllTabs, findPaneById: actions.findPaneById });
     o.set(ids.keys, { buildDraftStoreKey: ({ serverId, agentId }) => serverId + ":" + agentId });
     o.set(ids.workspaceSelectors, { selectWorkspaceDirectory: (state, server, workspace) => state.sessions[server].workspaces.get(workspace)?.workspaceDirectory });
     const openIds = Bridge.resolveModuleIds(window.__source, { opener: ["openWorkspaceTargetAtLocation", "openWorkspaceTargetBeside"] });
@@ -115,7 +123,7 @@ try {
       setTerminal() {
       }
     } });
-    window.__test = { roots: [], views: [], diffProps: {}, diffRoots: {}, clipboard: 0, inputs: [], opened: [], tabs, layoutState, session, sessionState };
+    window.__test = { roots: [], views: [], diffProps: {}, diffRoots: {}, clipboard: 0, inputs: [], opened: [], tabs, layoutState, session, sessionState, mainTabs, focusTab, selectSideTab, layoutListeners };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText() {
       window.__test.clipboard++;
       never();
@@ -174,10 +182,10 @@ try {
     o.set(3778, { confirmDialog: never });
     o.set(4480, { PaneContentToolbar: wrap, ToolbarButton: empty, ToolbarControls: wrap, paneContentToolbarTrailingPadding: () => 0, paneContentToolbarIconButtonStyle: () => ({}), paneContentToolbarIconSize: () => 14 });
     o.set(3861, {});
-    const actions = { commentsByTarget: new Map(), editor: null, sheetEditor: null, onStartComment: () => {
+    const reviewActions = { commentsByTarget: new Map(), editor: null, sheetEditor: null, onStartComment: () => {
     }, onChangeEditorBody: () => {
     } }, feedback = { clearance: 0, model: null, state: null }, workingFiles = [makeFile("working/a.ts")], query = { files: workingFiles, payloadError: null, diffTooLarge: false, isLoading: false };
-    Object.assign(o.get(4699), { ReviewFeedbackAction: empty, ReviewCommentSheet: empty, buildReviewDraftKey: () => "fixture-review", useInlineReviewController: () => actions, useReviewAttachmentSnapshot: () => null, useReviewFeedback: () => feedback });
+    Object.assign(o.get(4699), { ReviewFeedbackAction: empty, ReviewCommentSheet: empty, buildReviewDraftKey: () => "fixture-review", useInlineReviewController: () => reviewActions, useReviewAttachmentSnapshot: () => null, useReviewFeedback: () => feedback });
     o.set(5222, { useCheckoutDiffQuery: () => query });
     o.set(4116, { useCheckoutStatusQuery: () => ({ status: { isGit: true, isDirty: true, baseRef: "refs/heads/main", currentBranch: "fixture-topic" }, isLoading: false, isError: false, error: null }) });
     o.set(4119, { useWorkingDiffComparison: () => ({ comparison: "base", selectComparison: () => {
@@ -186,15 +194,14 @@ try {
     o.set(5221, { ...workingHook, usePublishWorkingDiffAttachment: () => {
     } });
     o.set(5024, { DiffDocument: (props) => React.createElement(Cache, null, React.createElement(Surface, { ...props, palette, headerTypography: { family: "sans-serif", size: 12, statSize: 11 }, collapsedFilePaths: new Set(), onToggleFile: never, onSelectPath: never, selectedPath: null })) });
-    const layoutStore = Object.assign((selector) => selector({ openTab: never }), { getState: () => layoutState, subscribe: () => () => {
-    } });
+    const layoutStore = Object.assign((selector) => selector({ openTab: never }), { getState: () => layoutState, subscribe: o.get(ids.layout).useWorkspaceLayoutStore.subscribe });
     o.set(ids.layout, { ...o.get(ids.layout), useWorkspaceLayoutStore: layoutStore });
     const working2 = document.createElement("div");
     working2.id = "working";
     working2.className = "panel";
     document.getElementById("fixture").append(working2);
     const workingTab = { tabId: "working", target: { kind: "working_diff" } };
-    tabs.push(workingTab);
+    tabs.push(workingTab); mainTabs.push(workingTab);
     const workingRoot = DOM.createRoot(working2);
     workingRoot.render(React.createElement(PaneProvider, { value: { serverId: "fixture-host", workspaceId: "workspace-one", tabId: "working", target: workingTab.target } }, React.createElement(r(4692).ChangesSurface, { serverId: "fixture-host", workspaceId: "workspace-one", cwd: "/work/fixture", enabled: true, presentation: "diff" })));
     window.__test.roots.push(workingRoot);
@@ -205,6 +212,19 @@ try {
     window.__host = Bridge.createSourceHost(window.__r, window.__source);
   });
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="git-diff-canvas-root"]').length === 3 && document.querySelectorAll(".xterm").length === 2 && window.__test.views.length === 1 && !!document.querySelector('#working [data-testid="git-diff-canvas-root"]'));
+  const focus = await page.evaluate(() => {
+    const root = document.querySelector('#file [data-testid="workspace-file-pane"]');
+    const chosen = () => window.__host.capture(root)?.offer.preferred?.agentId;
+    const seeded = chosen();
+    window.__test.selectSideTab("agent-b");
+    const backgroundPane = chosen();
+    window.__test.focusTab("agent-b"); window.__test.focusTab("file");
+    const recent = chosen();
+    window.__test.session.agents.get("agent-one").updatedAt = Date.now();
+    for (const listener of window.__test.layoutListeners) listener();
+    return { seeded, backgroundPane, recent, backgroundActivity: chosen() };
+  });
+  assert.deepEqual(focus, { seeded: "agent-one", backgroundPane: "agent-one", recent: "agent-two", backgroundActivity: "agent-two" });
   const file = await page.evaluate(async () => {
     const root = document.querySelector('#file [data-testid="workspace-file-pane"]'), result2 = window.__host.capture(root);
     if (result2?.kind !== "offer") return result2;
@@ -214,8 +234,52 @@ try {
   });
   assert.equal(file.snapshot.text, "  second	line\n");
   assert.deepEqual(file.recipients, ["agent-one", "agent-two"]);
-  assert.equal(file.preferred, null);
+  assert.equal(file.preferred, "agent-two");
   assert.equal(file.snapshot.origin.lineEnd, 2);
+  const fileTokens = await page.evaluate(() => {
+    const root = document.querySelector('#file [data-testid="workspace-file-pane"]'), first = window.__host.capture(root).offer;
+    const unchanged = window.__host.capture(root).offer.selectionToken === first.selectionToken;
+    window.__test.views[0].dispatch({ selection: { anchor: 0, head: 3 } });
+    const changed = window.__host.capture(root).offer.selectionToken !== first.selectionToken;
+    window.__test.views[0].dispatch({ selection: { anchor: 4, head: 18 } });
+    return { unchanged, changed };
+  });
+  assert.deepEqual(fileTokens, { unchanged: true, changed: true });
+  await page.evaluate(() => {
+    const ids = Bridge.resolveModuleIds(window.__source, Bridge.MODULE_SIGNATURES);
+    const deps = window.__registry.get(ids.store).deps, overrides = window.__overrides;
+    overrides.set(deps[3], {});
+    overrides.set(deps[4], { garbageCollectAttachments: async () => {} });
+    overrides.set(deps[5], { collectRetainedAttachmentIds: () => [] });
+    overrides.set(deps[6], { useCreateFlowStore: { getState: () => ({ pendingByDraftId: {} }) } });
+    overrides.set(deps[8], { useWorkspaceAttachmentsStore: { getState: () => ({ attachmentsByScope: {} }) } });
+    Object.assign(window.__test.session, { queuedMessages: new Map(), agentStreamTail: new Map(), agentStreamHead: new Map() });
+    window.__proofDraftHost = Bridge.createDraftHost(window.__r, ids);
+    window.require = (name) => {
+      if (name === "react-native") return { Platform: { OS: "web" } };
+      if (name === "./quote-composer") return { installQuoteComposer: (options) => Bridge.installQuoteComposer({ ...options, discover: async () => window.__proofDraftHost, discoverSources: async () => window.__host }) };
+      throw Error(`Unexpected toolbar dependency ${name}`);
+    };
+  });
+  await page.addScriptTag({ content: toolbar.outputFiles[0].text });
+  await page.evaluate(() => { window.__test.sends = []; window.__test.stopToolbar = Toolbar.installSelectionBar({ paseo: { agents: { ref: () => ({ send: (...args) => window.__test.sends.push(args) }) }, workspaces: { ref: () => ({ agents: { create: (...args) => { window.__test.sends.push(args); throw Error("Forbidden agent creation"); } } }) } }, openPanel() { throw Error("Forbidden panel"); } }); });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(() => document.querySelector('#file [data-testid="workspace-file-pane"]').dispatchEvent(new Event("pointerup", { bubbles: true })));
+  await page.waitForFunction(() => document.querySelector('[data-paseo-quote]')?.shadowRoot?.querySelector('select[data-receiver]')?.selectedOptions[0]?.textContent === "Second chat");
+  fs.mkdirSync("/tmp/paseo-annotations-extension/recent-receiver-proof", { recursive: true });
+  await page.screenshot({ path: "/tmp/paseo-annotations-extension/recent-receiver-proof/auto-receiver.png" });
+  const draft = await page.evaluate(async () => {
+    const shadow = document.querySelector('[data-paseo-quote]').shadowRoot;
+    const selected = shadow.querySelector('select[data-receiver]').selectedOptions[0].textContent;
+    shadow.querySelector('[data-action="quote"]').click();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await window.__proofDraftHost.flush();
+    const attachmentCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-two")).length;
+    const firstCount = Bridge.readQuotes(window.__proofDraftHost.read("fixture-host:agent-one")).length;
+    const composers = document.querySelectorAll("textarea[data-composer-input]").length;
+    return { selected, attachmentCount, firstCount, composers, sends: window.__test.sends.length };
+  });
+  assert.deepEqual(draft, { selected: "Second chat", attachmentCount: 1, firstCount: 0, composers: 0, sends: 0 });
   const markdown = await page.evaluate(async () => {
     const text = document.querySelector("#markdown p").firstChild, range = document.createRange();
     range.setStart(text, 0);
@@ -273,6 +337,7 @@ try {
     const offers = [window.__host.capture(a.root), window.__host.capture(b.root)];
     window.__test.termBinding = a;
     window.__test.termOffer = offers[0].offer;
+    if (window.__host.capture(a.root).offer.selectionToken !== offers[0].offer.selectionToken) throw Error("Unchanged terminal selection lost its token");
     const snapshots = await Promise.all(offers.map((x) => x.kind === "offer" ? x.offer.snapshot : x));
     const revealed = await offers[0].offer.source.reveal();
     await new Promise((resolve) => a.terminal.write("\r\nchanged", resolve));
@@ -312,6 +377,7 @@ try {
       const result2 = window.__host.capture(window.__diffBinding(id2).root);
       if (result2?.kind !== "offer") return result2;
       window.__test.diffOffer = result2.offer;
+      if (window.__host.capture(window.__diffBinding(id2).root).offer.selectionToken !== result2.offer.selectionToken) throw Error("Unchanged diff selection lost its token");
       return { kind: "offer", snapshot: await result2.offer.snapshot, valid: result2.offer.validForAdd(), geometry: result2.offer.source.geometry().kind };
     }, id);
   };
@@ -343,6 +409,7 @@ try {
     const source2 = await window.__test.fileOffer.snapshot, opened = await window.__host.reveal({ ...source2, origin: { ...source2.origin, version: { ...source2.origin.version, digest: "0".repeat(64) } } });
     history.replaceState({}, "", "/h/fixture-host/workspace/workspace-two");
     const validAfterWorkspaceSwitch = window.__test.fileOffer.validForAdd(), receiverAfterWorkspaceSwitch = window.__test.fileOffer.recipients[0].validate();
+    window.__test.stopToolbar();
     window.__host.dispose();
     window.__test.roots.forEach((root) => root.unmount());
     return { opened, validAfterWorkspaceSwitch, receiverAfterWorkspaceSwitch, clipboard: window.__test.clipboard, inputs: window.__test.inputs, remaining: document.querySelectorAll('.xterm,.cm-editor,[data-testid="git-diff-canvas-root"]').length };
@@ -354,7 +421,7 @@ try {
   assert.equal(final.remaining, 0);
   assert.deepEqual(final.inputs, []);
   assert.deepEqual(errors, []);
-  const result = { passed: true, file, markdown, terminal, working, old, right, mixed, reversed, mixedFiles, boundary, unified, final };
+  const result = { passed: true, focus, draft, fileTokens, file, markdown, terminal, working, old, right, mixed, reversed, mixedFiles, boundary, unified, final };
   fs.writeFileSync(process.env.PASEO_SOURCE_PROOF ?? "/tmp/paseo-external-source-browser-proof.json", JSON.stringify({ ...result, bundlePath }, null, 2));
   console.log(JSON.stringify({ passed: true, final }, null, 2));
 } catch (error) {

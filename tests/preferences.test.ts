@@ -29,7 +29,7 @@ async function source(kind: Exclude<AnnotationKind, "chat">): Promise<ExternalSn
   return { text: "raw\t\n", title: "source", origin: origins[kind] };
 }
 function external(snapshot: ExternalSnapshot, binding: StoreBinding): ExternalOffer {
-  return { root: binding.anchor, label: "source", snapshot: Promise.resolve(snapshot), preferred: binding, recipients: [binding], validForAdd: () => binding.validate(), source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
+  return { selectionToken: {}, root: binding.anchor, label: "source", snapshot: Promise.resolve(snapshot), preferred: binding, recipients: [binding], validForAdd: () => binding.validate(), source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
 }
 
 test("native host settings definition has five true defaults and loads persisted values without opening Settings", async () => {

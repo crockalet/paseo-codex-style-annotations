@@ -10,7 +10,7 @@ const tabSchema = z.object({ tabId: nonempty, target: targetSchema }).passthroug
 const paneContextSchema = z.object({ serverId: nonempty, workspaceId: nonempty, tabId: nonempty, target: targetSchema });
 const mapSchema = z.custom<Map<string, unknown>>((x) => x instanceof Map);
 const directorySchema = z.object({ agents: mapSchema, agentDetails: mapSchema, workspaces: mapSchema }).passthrough();
-const layoutSchema = z.object({ root: z.unknown(), parentTabIdByTabId: z.record(z.string(), z.string()).optional() }).passthrough();
+const layoutSchema = z.object({ root: z.unknown(), focusedPaneId: z.string().nullable().optional(), parentTabIdByTabId: z.record(z.string(), z.string()).optional() }).passthrough();
 const storeSchema = z.object({ layoutByWorkspace: z.record(z.string(), z.unknown()), sheetsByWorkspace: z.record(z.string(), z.array(z.object({ tab: tabSchema, parentTabId: z.string().nullable().optional() }).passthrough())) }).passthrough();
 const routeSchema = z.object({ serverId: nonempty, workspaceId: nonempty });
 const positionSchema = z.object({ fileIndex: z.number().int().nonnegative(), rowIndex: z.number().int().nonnegative(), cellIndex: z.number().int().nonnegative(), side: z.enum(["old", "new"]), sourceOffset: z.number().int().nonnegative() });
@@ -68,6 +68,7 @@ function hooks(fiber: Fiber): unknown[] {
 }
 export interface ExternalOffer {
   readonly label: string;
+  readonly selectionToken: object;
   readonly root: HTMLElement;
   readonly snapshot: Promise<ExternalSnapshot>;
   readonly recipients: readonly StoreBinding[];
@@ -89,7 +90,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
   const identity = functions(requireModule(ids.workspaceIdentity), ["resolveWorkspaceMapKeyByIdentity"]);
   const workspaceKeys = functions(requireModule(ids.workspaceKey), ["buildWorkspaceTabPersistenceKey"]);
   const selectors = functions(requireModule(ids.workspaceSelectors), ["selectWorkspaceDirectory"]);
-  const layoutModule = requireModule(ids.layout), layout = functions(layoutModule, ["collectAllTabs"]), layoutStore = store(field(layoutModule, "useWorkspaceLayoutStore"));
+  const layoutModule = requireModule(ids.layout), layout = functions(layoutModule, ["collectAllTabs", "findPaneById"]), layoutStore = store(field(layoutModule, "useWorkspaceLayoutStore"));
   const sessions = store(field(requireModule(ids.sessions), "useSessionStore"));
   const PaneProvider = callable.parse(field(requireModule(ids.pane), "PaneProvider"));
   const keys = functions(requireModule(ids.keys), ["buildDraftStoreKey"]);
@@ -103,8 +104,6 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
   };
   const pathFunctions = () => functions(requireModule(capability("paths").paths), ["resolveWorkspaceFilePaths", "normalizeWorkspaceFileLocation", "createWorkspaceFileTabTarget"]);
   let disposed = false, contextRevision = 0;
-  const unlayoutContext = callable.parse(layoutStore.subscribe(() => { contextRevision++; }));
-  const unsessionContext = callable.parse(sessions.subscribe(() => { contextRevision++; }));
   const scope = (context?: z.infer<typeof paneContextSchema>): WorkspaceIdentity => {
     const route = routeSchema.parse(routes.parseHostWorkspaceRouteFromPathname(window.location.pathname));
     const state = z.object({ sessions: z.record(z.string(), z.unknown()) }).parse(sessions.getState());
@@ -123,6 +122,34 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
     const state = storeSchema.parse(layoutStore.getState()), tree = layoutSchema.parse(state.layoutByWorkspace[workspace.workspaceKey]);
     return { tabs: [...z.array(tabSchema).parse(layout.collectAllTabs(tree.root)), ...(state.sheetsByWorkspace[workspace.workspaceKey] ?? []).map((sheet) => sheet.tab)], parents: { ...tree.parentTabIdByTabId, ...Object.fromEntries((state.sheetsByWorkspace[workspace.workspaceKey] ?? []).filter((sheet) => sheet.parentTabId).map((sheet) => [sheet.tab.tabId, sheet.parentTabId])) } };
   };
+  const focusHistory = new Map<string, string[]>();
+  let lastFocus: string | null = null;
+  const sampleFocus = () => {
+    if (disposed) return;
+    try {
+      const workspace = scope(), state = storeSchema.parse(layoutStore.getState());
+      const tree = layoutSchema.parse(state.layoutByWorkspace[workspace.workspaceKey]);
+      const pane = z.object({ focusedTabId: z.string().nullable() }).nullable().parse(layout.findPaneById(tree.root, tree.focusedPaneId));
+      const tab = pane && z.array(tabSchema).parse(layout.collectAllTabs(tree.root)).find((item) => item.tabId === pane.focusedTabId);
+      const agentId = tab?.target.kind === "agent" ? nonempty.parse(field(tab.target, "agentId")) : null;
+      const focus = JSON.stringify([workspace.workspaceKey, pane?.focusedTabId ?? null, agentId]);
+      if (focus === lastFocus) return;
+      lastFocus = focus;
+      if (!agentId) return;
+      const history = focusHistory.get(workspace.workspaceKey) ?? [];
+      focusHistory.set(workspace.workspaceKey, [agentId, ...history.filter((id) => id !== agentId)]);
+    } catch { lastFocus = null; }
+  };
+  const unlayoutContext = callable.parse(layoutStore.subscribe(() => { contextRevision++; sampleFocus(); }));
+  const unsessionContext = callable.parse(sessions.subscribe(() => { contextRevision++; }));
+  let routePathname = window.location.pathname;
+  const reconcileRoute = () => {
+    if (window.location.pathname !== routePathname) { routePathname = window.location.pathname; contextRevision++; }
+    sampleFocus();
+  };
+  window.addEventListener("popstate", reconcileRoute);
+  window.addEventListener("hashchange", reconcileRoute);
+  sampleFocus();
   const contextFor = (root: HTMLElement, entry?: { fiber: Fiber; ancestors: Fiber[] }) => {
     const found = entry ?? currentFibers(root).find(({ fiber }) => fiber.stateNode === root);
     if (!found) throw new Error("无法确认原文所属标签。");
@@ -166,7 +193,12 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       result.push(binding);
     }
     const parentId = sourceTabs.parents[context.tabId], parent = sourceTabs.tabs.find((tab) => tab.tabId === parentId);
-    const preferred = parent?.target.kind === "agent" ? result.find((binding) => binding.agentId === field(parent.target, "agentId")) ?? null : result.length === 1 ? result[0] : null;
+    result.sort((a, b) => a.agentId < b.agentId ? -1 : a.agentId > b.agentId ? 1 : 0);
+    const history = (focusHistory.get(workspace.workspaceKey) ?? []).filter((id) => result.some((binding) => binding.agentId === id));
+    focusHistory.set(workspace.workspaceKey, history);
+    const recent = result.find((binding) => binding.agentId === history[0]);
+    const parentBinding = parent?.target.kind === "agent" ? result.find((binding) => binding.agentId === field(parent.target, "agentId")) : undefined;
+    const preferred = recent ?? parentBinding ?? result[0] ?? null;
     return { recipients: result, preferred };
   };
   const fileIdentity = (path: unknown, workspace: WorkspaceIdentity): FileIdentity => {
@@ -178,9 +210,14 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
     const r = root.getBoundingClientRect(), left = Math.max(0, r.left), right = Math.min(innerWidth, r.right), top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
     return right > left && bottom > top ? { kind: "visible", rects: [new DOMRect(left, top, right - left, Math.min(22, bottom - top))], bounds: { left, right, top, bottom } } : { kind: "offscreen" };
   };
-  const makeOffer = (root: HTMLElement, captured: ReturnType<typeof contextFor>, snapshot: Promise<ExternalSnapshot>, valid: () => boolean, liveGeometry: () => SourceGeometry, reveal: ExternalLiveSource["reveal"]): ExternalSelection => {
+  const selections = new WeakMap<HTMLElement, { evidence: readonly unknown[]; token: object }>();
+  const makeOffer = (root: HTMLElement, captured: ReturnType<typeof contextFor>, evidence: readonly unknown[], snapshot: Promise<ExternalSnapshot>, valid: () => boolean, liveGeometry: () => SourceGeometry, reveal: ExternalLiveSource["reveal"]): ExternalSelection => {
     void snapshot.catch(() => {});
-    return { kind: "offer", offer: { root, label: captured.context.target.kind, snapshot, ...recipients(root, captured), validForAdd: valid, source: { valid, geometry: () => { try { return liveGeometry(); } catch { return { kind: "unavailable" }; } }, reveal } } };
+    const identity = [captured.workspace.workspaceKey, captured.context.tabId, JSON.stringify(captured.context.target), ...evidence];
+    const previous = selections.get(root);
+    const selectionToken = previous && identity.length === previous.evidence.length && identity.every((value, index) => Object.is(value, previous.evidence[index])) ? previous.token : {};
+    selections.set(root, { evidence: identity, token: selectionToken });
+    return { kind: "offer", offer: { root, selectionToken, label: captured.context.target.kind, snapshot, ...recipients(root, captured), validForAdd: valid, source: { valid, geometry: () => { try { return liveGeometry(); } catch { return { kind: "unavailable" }; } }, reveal } } };
   };
 
   const captureFile = (root: HTMLElement): ExternalSelection => {
@@ -215,7 +252,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
         const top = Math.max(pa.top, bounds.bounds.top), bottom = Math.min(pb.bottom, bounds.bounds.bottom);
         return bottom > top ? { ...bounds, rects: [new DOMRect(Math.max(bounds.bounds.left, pa.left), top, Math.max(1, Math.min(bounds.bounds.right, pb.right) - pa.left), bottom - top)] } : { kind: "offscreen" } satisfies SourceGeometry;
       };
-      return makeOffer(root, captured, snapshot, sourceValid, editorGeometry, async () => {
+      return makeOffer(root, captured, [view, doc, from, to], snapshot, sourceValid, editorGeometry, async () => {
         if (!exact()) return { kind: "unavailable", reason: "文件内容或编辑器已变化，原文位置不可用。" };
         const dispatch = callable.parse(field(view, "dispatch")); dispatch.call(view, { selection: { anchor: from, head: to }, scrollIntoView: true });
         return { kind: "highlighted" };
@@ -246,7 +283,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       }).filter((rect) => rect.width > 0 && rect.height > 0);
       return rects.length ? { kind: "visible", rects, bounds: { left, right, top, bottom } } : { kind: "offscreen" };
     };
-    return makeOffer(root, captured, snapshot, valid, markdownGeometry, async () => {
+    return makeOffer(root, captured, [preview, content, start, end, startOffset, endOffset], snapshot, valid, markdownGeometry, async () => {
       if (!exact()) return { kind: "unavailable", reason: "Markdown 预览已变化，原文位置不可用。" };
       const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
       for (let ancestor = preview.parentElement; ancestor && root.contains(ancestor); ancestor = ancestor.parentElement) {
@@ -333,7 +370,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       }
       return rects.length ? { kind: "visible", rects, bounds: { left: Math.max(0, box.left), right: Math.min(innerWidth, box.right), top: Math.max(0, box.top), bottom: Math.min(innerHeight, box.bottom) } } : { kind: "offscreen" };
     };
-    return makeOffer(root, captured, snapshot, valid, terminalGeometry, async () => {
+    return makeOffer(root, captured, [binding.runtime, terminal, buffer, writeEpoch, content, text, position.start.x, position.start.y, position.end.x, position.end.y], snapshot, valid, terminalGeometry, async () => {
       if (!valid() || evidence() !== content || trackTerminal(terminal).epoch !== writeEpoch) return { kind: "unavailable", reason: "终端缓冲区或会话已变化，原文位置不可用。" };
       terminal.scrollToLine(position.start.y); terminal.select(position.start.x, position.start.y, (position.end.y - position.start.y) * cols + position.end.x - position.start.x);
       if (terminal.getSelection() !== text) return { kind: "unavailable", reason: "终端原文校验失败。" };
@@ -424,7 +461,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
     const snapshot = fingerprint(canonical).then((version): ExternalSnapshot => ({ text, title: `${file.path}:${lineStart}-${lineEnd} · ${side === "old" ? "旧" : "新"}侧`, origin: { kind: "diff", workspace: captured.workspace, tabId: captured.context.tabId, segment: { file: sourceFile, displayPath: file.path, oldPath: file.file.oldPath ?? null, side, lineStart, lineEnd, startColumn: first.from, endColumn: last.to, cells: cells.map(({ cell, from, to }) => ({ lineNumber: Number(cell.lineNumber), hunkIndex: Number(cell.sourceIdentity?.hunkIndex), lineIndex: Number(cell.sourceIdentity?.lineIndex), type: cell.type, from, to })) }, revision, version } }));
     const contextValid = sourceGuard(root, captured);
     const valid = () => { try { const current = diffBinding(root); return visible(root) && current.model === model && sameTarget(current.captured, captured); } catch { return false; } };
-    return makeOffer(root, captured, snapshot, valid, () => {
+    return makeOffer(root, captured, [model, canonical, JSON.stringify(ordered), JSON.stringify(revision)], snapshot, valid, () => {
       if (!contextValid() || field(binding.modelRef, "current") !== model) return { kind: "unavailable" };
       const box = root.getBoundingClientRect(), bounds = { left: Math.max(0, box.left), right: Math.min(innerWidth, box.right), top: Math.max(0, box.top), bottom: Math.min(innerHeight, box.bottom) };
       const rectangles = z.array(z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number(), fileIndex: z.number().int(), clipX: z.number(), clipWidth: z.number() })).parse(helpers.selectionRectangles({ model, selection }));
@@ -471,6 +508,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
   };
   const capture: SourceHost["capture"] = (target) => {
     if (disposed) return null;
+    reconcileRoute();
     const selection = window.getSelection(), root = rootFor(target) ?? rootFor(selection?.anchorNode);
     if (!root || !visible(root)) return null;
     try {
@@ -497,7 +535,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
         });
       };
       const scan = () => {
-        scanFrame = 0;
+        scanFrame = 0; reconcileRoute();
         for (const [root, bound] of terminals) {
           let current: Terminal | null = null; try { if (visible(root)) current = terminalBinding(root).terminal; } catch {}
           if (current !== bound.terminal) { bound.dispose(); terminalEpochs.get(bound.terminal)?.dispose(); terminalEpochs.delete(bound.terminal); terminals.delete(root); }
@@ -529,7 +567,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       };
       cleanups.add(cleanup); return cleanup;
     },
-    dispose() { disposed = true; unlayoutContext(); unsessionContext(); for (const cleanup of cleanups) cleanup(); for (const tracker of terminalEpochs.values()) tracker.dispose(); terminalEpochs.clear(); },
+    dispose() { disposed = true; unlayoutContext(); unsessionContext(); window.removeEventListener("popstate", reconcileRoute); window.removeEventListener("hashchange", reconcileRoute); focusHistory.clear(); for (const cleanup of cleanups) cleanup(); for (const tracker of terminalEpochs.values()) tracker.dispose(); terminalEpochs.clear(); },
   };
 }
 

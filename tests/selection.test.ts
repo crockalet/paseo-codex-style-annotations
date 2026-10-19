@@ -218,7 +218,7 @@ test("选区按钮的 Escape 不打断 Agent，失焦和 Escape 完成后保留�
 });
 
 
-test("external toolbar requires an explicit same-workspace receiver, freezes its selection, and writes without a composer", async () => {
+test("external toolbar defaults automatically, retains manual choice only for the same selection, and writes to a hidden draft", async () => {
   const { host } = await nativeHost(), { dom, anchor, binding } = setup();
   document.querySelector('[data-testid="message-input-root"]')?.remove();
   let receive: (selection: ExternalSelection) => void = () => {}, observations = 0;
@@ -228,17 +228,28 @@ test("external toolbar requires an explicit same-workspace receiver, freezes its
     await settle();
     const recipient = (agentId: string): StoreBinding => ({ kind: "store", hostId: binding.hostId, agentId, draftKey: host.key(binding.hostId, agentId), anchor, pane: binding.pane, label: agentId === "agent-one" ? "First chat" : "Second chat", validate: () => window.location.pathname === binding.workspacePath });
     const first = recipient("agent-one"), second = recipient("agent-two");
-    const selected: ExternalOffer = { root: anchor, label: "file", recipients: [first, second], preferred: null, validForAdd: () => true,
+    const selected: ExternalOffer = { root: anchor, selectionToken: {}, label: "file", recipients: [first, second], preferred: first, validForAdd: () => true,
       snapshot: Promise.resolve({ text: "  exact selected text\t\n", title: "a.ts:2", origin: { kind: "file", workspace: { serverId: binding.hostId, workspaceId: "workspace-one", workspaceKey: "fixture-host:workspace-one", root: "/work" }, tabId: "file", file: { requestedPath: "a.ts", absolutePath: "/work/a.ts", relativePath: "a.ts" }, from: 4, to: 15, lineStart: 2, lineEnd: 2, version: await fingerprint("document") } }),
       source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture" }) } };
     receive({ kind: "offer", offer: selected });
     const toolbar = document.querySelector('[data-paseo-quote]'), shadow = toolbar?.shadowRoot, add = shadow?.querySelector<HTMLButtonElement>('[data-action="quote"]'), chooser = shadow?.querySelector<HTMLSelectElement>('select[data-receiver]');
-    assert.ok(add && chooser); assert.equal(add.disabled, true); assert.equal(chooser.value, ""); assert.deepEqual(Array.from(chooser.options).map((option) => option.textContent), ["选择接收对话", "First chat", "Second chat"]);
+    assert.ok(add && chooser); assert.equal(add.disabled, false); assert.equal(chooser.value, "0"); assert.deepEqual(Array.from(chooser.options).map((option) => option.textContent), ["选择接收对话", "First chat", "Second chat"]);
     assert.equal(shadow?.querySelector<HTMLButtonElement>('[data-action="side"]')?.hidden, true);
-    chooser.value = "1"; chooser.dispatchEvent(new dom.window.Event("change", { bubbles: true })); assert.equal(add.disabled, false);
+    const publish = (offer: ExternalOffer) => receive({ kind: "offer", offer });
+    const fresh = { ...selected, preferred: second };
+    publish(fresh); assert.equal(chooser.value, "1", "automatic mode adopts the latest preferred receiver on recapture");
+    chooser.value = "0"; chooser.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    publish(fresh); assert.equal(chooser.value, "0", "viewport publication retains manual choice");
+    publish({ ...fresh }); assert.equal(chooser.value, "0", "same logical selection recapture retains manual choice");
+    publish({ ...fresh, recipients: [second] }); assert.equal(chooser.value, "0", "removed manual recipient returns to automatic");
+    publish({ ...fresh }); assert.equal(chooser.value, "1");
+    chooser.value = "0"; chooser.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    publish({ ...fresh, selectionToken: {} }); assert.equal(chooser.value, "1", "new range in the same editor resets manual choice");
+    publish({ ...fresh, selectionToken: {}, recipients: [], preferred: null }); assert.equal(add.disabled, true);
+    const finalOffer = { ...fresh, selectionToken: {} }; publish(finalOffer); assert.equal(add.disabled, false); assert.equal(chooser.value, "1");
     anchor.textContent = "changed after toolbar focus"; add.click(); await settle(); await settle();
     assert.equal(readQuotes(host.read(first.draftKey)).length, 0); const quotes = readQuotes(host.read(second.draftKey)); assert.equal(quotes.length, 1); assert.equal(quotes[0].item.text.endsWith("  exact selected text\t\n"), true);
-    receive({ kind: "offer", offer: selected }); assert.equal(toolbar?.getAttribute("style")?.includes("display: none"), true, "viewport updates cannot reoffer an already consumed selection");
+    receive({ kind: "offer", offer: finalOffer }); assert.equal(toolbar?.getAttribute("style")?.includes("display: none"), true, "viewport updates cannot reoffer an already consumed selection");
   } finally { cleanup(); assert.equal(observations, 0); await host.flush(); dom.window.close(); }
 });
 

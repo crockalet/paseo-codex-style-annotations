@@ -405,9 +405,13 @@ const MARKUP = `
  </div>
 </div>`;
 
+type ReceiverChoice =
+ | { mode: "automatic"; binding: StoreBinding | null }
+ | { mode: "manual"; binding: StoreBinding | null };
+
 type Interaction =
  | { kind: "hidden" }
- | { kind: "external"; selection: NonNullable<ExternalSelection>; recipient: StoreBinding | null }
+ | { kind: "external"; selection: NonNullable<ExternalSelection>; choice: ReceiverChoice }
  | { kind: "selection"; snapshot: Snapshot }
  | { kind: "side"; snapshot: Snapshot; status: "editing" | "sending" };
 const GAP = 8;
@@ -480,11 +484,15 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
  };
  const showExternal = (selection: NonNullable<ExternalSelection>) => {
   if (interaction.kind === "side") return;
-  const previous = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer.root === selection.offer.root ? interaction.recipient : null;
+  const previous = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer.selectionToken === selection.offer.selectionToken ? interaction.choice : null;
   const candidates = selection.kind === "offer" ? selection.offer.recipients : [];
-  const recipient = previous ? candidates.find((item) => item.hostId === previous.hostId && item.agentId === previous.agentId && item.draftKey === previous.draftKey) ?? null : selection.kind === "offer" ? selection.offer.preferred : null;
+  const manual = previous?.mode === "manual" && previous.binding ? candidates.find((item) => item.hostId === previous.binding?.hostId && item.agentId === previous.binding?.agentId && item.draftKey === previous.binding?.draftKey && item.validate()) : null;
+  const choice: ReceiverChoice = previous?.mode === "manual" && (!previous.binding || manual)
+   ? { mode: "manual", binding: manual ?? null }
+   : { mode: "automatic", binding: selection.kind === "offer" ? selection.offer.preferred : null };
+  const recipient = choice.binding;
   const sameOffer = interaction.kind === "external" && interaction.selection.kind === "offer" && selection.kind === "offer" && interaction.selection.offer === selection.offer;
-  interaction = { kind: "external", selection, recipient };
+  interaction = { kind: "external", selection, choice };
   if (!sameOffer) externalKind = null;
   panel.setAttribute("data-mode", "bar"); button("side").hidden = true; sourceLabel.hidden = false;
   sourceLabel.textContent = selection.kind === "offer" ? selection.offer.label === "file" ? "文件原文" : selection.offer.label === "commit_diff" || selection.offer.label === "working_diff" || selection.offer.label === "changes_tree" ? "Diff 原文" : "终端输出" : "原文选择";
@@ -506,8 +514,8 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
  };
  const changeReceiver: DomListener = () => {
   if (interaction.kind !== "external" || interaction.selection.kind !== "offer") return;
-  interaction = { ...interaction, recipient: receiver.value === "" ? null : interaction.selection.offer.recipients[Number(receiver.value)] ?? null };
-  button("quote").disabled = !interaction.recipient; updatePolicy();
+  interaction = { ...interaction, choice: { mode: "manual", binding: receiver.value === "" ? null : interaction.selection.offer.recipients[Number(receiver.value)] ?? null } };
+  button("quote").disabled = !interaction.choice.binding; updatePolicy();
  };
  receiver.addEventListener("change", changeReceiver);
  const updatePolicy = () => {
@@ -519,7 +527,7 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
   const problem = state.status === "error" ? `注释设置读取失败：${state.error}` : state.status === "loading" ? "正在读取注释设置…" : kind && !enabled ? "此类注释已关闭，可在插件设置中开启" : "";
   if (problem) { selectionStatus.textContent = problem; selectionStatus.hidden = false; }
   else if (interaction.kind === "selection") { selectionStatus.hidden = true; button("quote").disabled = !interaction.snapshot.composer || !interaction.snapshot.agentId; }
-  else if (interaction.selection.kind === "offer") { selectionStatus.hidden = interaction.selection.offer.recipients.length > 0; button("quote").disabled = !interaction.recipient || !enabled; }
+  else if (interaction.selection.kind === "offer") { selectionStatus.hidden = interaction.selection.offer.recipients.length > 0; button("quote").disabled = !interaction.choice.binding || !enabled; }
  };
  const stopPolicy = preferences?.subscribe(updatePolicy) ?? (() => {});
  const stopExternal = quotes.observeExternal((selection) => {
@@ -530,8 +538,8 @@ export function installSelectionBar(client: PluginClientContext, preferences?: A
  const quote = () => {
   if (interaction.kind === "external") {
    const current = interaction;
-   if (current.selection.kind !== "offer" || !current.recipient) return;
-   consumedOffer = current.selection.offer; hide(); void quotes.addExternal(current.selection.offer, current.recipient); return;
+   if (current.selection.kind !== "offer" || !current.choice.binding) return;
+   consumedOffer = current.selection.offer; hide(); void quotes.addExternal(current.selection.offer, current.choice.binding); return;
   }
   if (interaction.kind !== "selection") return;
   const snapshot = interaction.snapshot;

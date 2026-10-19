@@ -18,7 +18,7 @@ function receiver(host: DraftHost, root: HTMLElement, agentId = "agent-one"): St
     validate: () => window.location.pathname === "/h/fixture-host/workspace/workspace-one" };
 }
 function offer(snapshot: ExternalSnapshot, binding: StoreBinding): ExternalOffer {
-  return { label: "file", root: binding.anchor, snapshot: Promise.resolve(snapshot), recipients: [binding], preferred: binding, validForAdd: () => binding.anchor.isConnected,
+  return { label: "file", selectionToken: {}, root: binding.anchor, snapshot: Promise.resolve(snapshot), recipients: [binding], preferred: binding, validForAdd: () => binding.anchor.isConnected,
     source: { valid: () => true, geometry: () => ({ kind: "unavailable" }), reveal: async () => ({ kind: "unavailable", reason: "fixture source gone" }) } };
 }
 
