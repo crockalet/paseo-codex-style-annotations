@@ -27,7 +27,7 @@ type SentRow = Readonly<{ serverId: string; agentId: string; row: HTMLElement; l
   quotes: readonly Quote[]; frames: readonly HTMLElement[]; rootOnly: boolean; content: string; root: Root; current: unknown }>;
 type Override = Readonly<{ element: HTMLElement; value: string; priority: string; token: string }>;
 type Decoration = { row: SentRow; element: HTMLDivElement; popup: HTMLDivElement; button: HTMLButtonElement; panel: HTMLDivElement;
-  expanded: boolean; overrides: readonly Override[]; close(): void };
+  expanded: boolean; overrides: readonly Override[]; close(): void; retext(): void };
 
 const CSS = `
 :host{font:12px/1.45 var(--quote-font,system-ui,sans-serif);color:var(--quote-fg)}*{box-sizing:border-box}
@@ -245,13 +245,14 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal, la
     const popupShadow = popup.attachShadow({ mode: "open" });
     popupShadow.innerHTML = `<style>${CSS}</style><div class="panel" contenteditable="false" role="region" aria-label="${t().sentAnnotations}" hidden><header>${t().annotations}</header></div>`;
     const panel = popupShadow.querySelector<HTMLDivElement>(".panel")!; panel.tabIndex = -1;
+    const header = popupShadow.querySelector("header")!, chipLabel = button.querySelector("span")!, copies: HTMLButtonElement[] = [];
     panel.setAttribute("aria-label", row.pending ? t().annotations : t().sentAnnotations);
-    button.querySelector("span")!.textContent = t().count(row.quotes.length);
+    chipLabel.textContent = t().count(row.quotes.length);
     for (const [index, quote] of row.quotes.entries()) {
       const entry = doc.createElement("section"); entry.className = "entry";
       const head = doc.createElement("div"); head.className = "entry-head";
       const title = doc.createElement("span"); title.textContent = `${index + 1}. ${quote.title}`;
-      const copy = doc.createElement("button"); copy.className = "copy"; copy.type = "button"; copy.textContent = t().copyAll;
+      const copy = doc.createElement("button"); copy.className = "copy"; copy.type = "button"; copy.textContent = t().copyAll; copies.push(copy);
       copy.addEventListener("click", () => {
         if (!valid(decoration)) return;
         if (!view.navigator.clipboard) { copy.textContent = t().copySelect; return; }
@@ -262,6 +263,10 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal, la
     }
     const decoration: Decoration = { row, element, popup, button, panel, expanded: false, overrides: [], close() {
       decoration.expanded = false; panel.hidden = true; button.setAttribute("aria-expanded", "false");
+    }, retext() {
+      header.textContent = t().annotations; chipLabel.textContent = t().count(decoration.row.quotes.length);
+      panel.setAttribute("aria-label", decoration.row.pending ? t().annotations : t().sentAnnotations);
+      for (const copy of copies) copy.textContent = t().copyAll;
     } };
     const toggle = (keyboard = false) => {
       if (!valid(decoration)) { schedule(); return; }
@@ -341,10 +346,11 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal, la
   view.addEventListener("resize", onViewport);
   view.addEventListener("scroll", onViewport, true);
   const timer = view.setInterval(onVisible, 1_000);
+  const stopLanguage = options.language?.subscribe?.(() => { for (const decoration of decorations.values()) decoration.retext(); });
   void (options.discover ?? discoverSentNative)(lifetime.signal, options.language).then((native) => { if (!disposed) { capability = native; schedule(); } }).catch(() => { if (!disposed) console.warn(t().nativeUnconfirmed); });
   return () => {
     if (disposed) return;
-    disposed = true; lifetime.abort(); observer.disconnect(); view.clearInterval(timer);
+    disposed = true; lifetime.abort(); observer.disconnect(); view.clearInterval(timer); stopLanguage?.();
     doc.removeEventListener("pointerdown", onOutside, true); doc.removeEventListener("visibilitychange", onVisible);
     view.removeEventListener("resize", onViewport); view.removeEventListener("scroll", onViewport, true);
     for (const decoration of decorations.values()) remove(decoration);

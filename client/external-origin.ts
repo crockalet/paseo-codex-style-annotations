@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { decodeAnnotation } from "./format";
-import { sourcePrefixes, text, type LocaleSource } from "./messages";
+import { acceptedSourcePrefixes, text, type LocaleSource } from "./messages";
 
 const name = z.string().min(1).max(2048);
 const integer = z.number().int().nonnegative();
@@ -52,7 +52,7 @@ export function decodeExternal(item: { url: string; text: string; subtitle?: str
     if (decoded.kind !== "editable") throw new Error(decoded.reason);
     const quote = decoded.annotation.quote;
     if (!quote.startsWith(data.prefix) || !quote.endsWith(data.suffix) || quote.length < data.prefix.length + data.suffix.length) throw new Error("snapshot text mismatch");
-    return { kind: "external", snapshot: { text: quote.slice(data.prefix.length, data.suffix ? -data.suffix.length : undefined), title: data.prefix.replace(new RegExp(`^(?:${sourcePrefixes.join("|")})`), "").trimEnd(), origin: data.origin }, comment: decoded.annotation.comment };
+    return { kind: "external", snapshot: { text: quote.slice(data.prefix.length, data.suffix ? -data.suffix.length : undefined), title: data.prefix.slice(acceptedSourcePrefixes.find((entry) => data.prefix.startsWith(entry))?.length ?? 0).trimEnd(), origin: data.origin }, comment: decoded.annotation.comment };
   } catch { return { kind: "invalid", reason: text(language).locatorInvalid }; }
 }
 

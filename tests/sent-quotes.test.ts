@@ -250,3 +250,18 @@ for (const kind of ["mixed", "quote-only"] as const) {
     } finally { dispose(); await f.close(); }
   });
 }
+
+test("the sent chip, header and copy button follow a language change", async () => {
+  const f = fixture(); await f.render();
+  let locale: "en" | "zh" = "zh"; const listeners = new Set<() => void>();
+  const language = { getSnapshot: () => locale, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; } };
+  const dispose = installSentQuotes({ discover: async () => f.capability, language });
+  try {
+    await tick(); const { button, shadow, panel } = controls(f);
+    assert.equal(button.textContent, "1 条注释"); assert.equal(shadow.querySelector("header")!.textContent, "注释");
+    assert.equal(shadow.querySelector(".copy")!.textContent, "复制全文"); assert.equal(panel.getAttribute("aria-label"), "已发送的注释");
+    locale = "en"; for (const listener of listeners) listener();
+    assert.equal(button.textContent, "1 annotation"); assert.equal(shadow.querySelector("header")!.textContent, "Annotations");
+    assert.equal(shadow.querySelector(".copy")!.textContent, "Copy full text"); assert.equal(panel.getAttribute("aria-label"), "Sent annotations");
+  } finally { dispose(); assert.equal(listeners.size, 0); await f.close(); }
+});

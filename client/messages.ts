@@ -1,7 +1,7 @@
 import type { AnnotationKind } from "../shared/preferences";
 import type { SettingsLanguage, SettingsLocale } from "./settings-language";
 
-export type LocaleSource = Pick<SettingsLanguage, "getSnapshot">;
+export type LocaleSource = Pick<SettingsLanguage, "getSnapshot"> & Partial<Pick<SettingsLanguage, "subscribe">>;
 
 const zh = {
   pluginClosed: "注释插件已关闭。",
@@ -127,6 +127,16 @@ const zh = {
   sourceTabOpenFailed: "无法打开原文标签。",
   selectionApiUnverified: (name: string) => `当前 Paseo 的 ${name} 选择接口无法验证。`,
   selectionApiNotFound: "未找到工作区原文选择接口。",
+  sideChat: "侧边对话",
+  openSideChatTab: "将侧边对话打开为标签页",
+  openAsTab: "作为标签页打开",
+  askFollowUp: "继续提问…",
+  sendToSideChat: "发送到侧边对话",
+  thinking: "思考中…",
+  loading: "加载中…",
+  send: "发送",
+  mainChatUnavailable: "主对话不可用。",
+  mainChatNoWorkspace: "主对话没有工作区。",
 };
 
 export type Messages = typeof zh;
@@ -255,6 +265,16 @@ const en: Messages = {
   sourceTabOpenFailed: "Could not open the source tab.",
   selectionApiUnverified: (name) => `Could not verify the current Paseo ${name} selection API.`,
   selectionApiNotFound: "Workspace source selection API not found.",
+  sideChat: "Side chat",
+  openSideChatTab: "Open the side chat as a tab",
+  openAsTab: "Open as tab",
+  askFollowUp: "Ask a follow-up…",
+  sendToSideChat: "Send to the side chat",
+  thinking: "Thinking…",
+  loading: "Loading…",
+  send: "Send",
+  mainChatUnavailable: "The main chat is not available.",
+  mainChatNoWorkspace: "The main chat has no workspace.",
 };
 
 export const messages: Record<SettingsLocale, Messages> = { en, zh };
@@ -263,7 +283,18 @@ export function text(language?: LocaleSource): Messages {
   return messages[language?.getSnapshot() ?? "en"];
 }
 
-/** Every locale's quote-source prefix, so saved annotations parse whatever language wrote them. */
-export const sourcePrefixes: string[] = Object.values(messages).map((entry) => entry.sourcePrefix);
-/** Every locale's attachment source title: drafts saved before the locale switch carry the Chinese one. */
-export const quoteSourceTitles: string[] = Object.values(messages).map((entry) => entry.quoteSourceTitle);
+/** Stored in saved drafts and annotations, so this list must only grow: never reword or remove an entry. */
+export const acceptedQuoteSourceTitles: readonly string[] = ["引用", "Quote"];
+export const acceptedSourcePrefixes: readonly string[] = ["引用来源：", "Quote source: "];
+
+/** An error whose text is built from the language current when it is shown, not when it was thrown. */
+export class LocalizedError extends Error {
+  constructor(readonly describe: (entry: Messages) => string, language?: LocaleSource) {
+    super(describe(text(language)));
+  }
+}
+
+export function describeError(cause: unknown, language?: LocaleSource): string {
+  if (cause instanceof LocalizedError) return cause.describe(text(language));
+  return cause instanceof Error ? cause.message : String(cause);
+}

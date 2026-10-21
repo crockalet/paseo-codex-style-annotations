@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { decodeAnnotation, encodeAnnotation } from "./format";
 import { QUOTE_PLUGIN_ID, quotePluginIdSchema } from "./quote-identity";
-import { quoteSourceTitles, text, type LocaleSource } from "./messages";
+import { acceptedQuoteSourceTitles, describeError, LocalizedError, text, type LocaleSource } from "./messages";
 
 const callable = z.custom<(...args: unknown[]) => unknown>((value) => typeof value === "function");
 const schema = z.object({ safeParse: callable });
@@ -12,7 +12,7 @@ export const quoteAttachmentSchema = z.object({
   kind: z.literal("plugin_resource"),
   pluginId: quotePluginIdSchema,
   sourceId: z.literal(QUOTE_SOURCE),
-  sourceTitle: z.string().refine((value) => quoteSourceTitles.includes(value)),
+  sourceTitle: z.string().refine((value) => acceptedQuoteSourceTitles.includes(value)),
   sourceIcon: z.literal("MessageSquareQuote"),
   item: z.object({
     id: quoteId,
@@ -202,7 +202,7 @@ export async function mutateQuotes(options: {
     next = { ...current, attachments };
     if (!valid()) return { kind: "not-written", reason: t.chatSwitchedNotSaved, fallback: false };
   } catch (cause) {
-    return { kind: "not-written", reason: reason(cause), fallback: !isStoreBinding(binding) };
+    return { kind: "not-written", reason: reason(cause, options.language), fallback: !isStoreBinding(binding) };
   }
   try {
     host.save(key, next);
@@ -257,14 +257,14 @@ export function writeQuoteComment(options: {
     next = { ...current, attachments };
     if (!(options.isCurrent?.() ?? true) || bindingStatus(binding) !== "ready") return { kind: "not-written", reason: t.recipientSwitchedComment, fallback: false };
   } catch (cause) {
-    return { kind: "not-written", reason: reason(cause), fallback: false };
+    return { kind: "not-written", reason: reason(cause, options.language), fallback: false };
   }
   try {
     host.save(key, next);
     if (!sameContent(host.read(key), next)) return { kind: "uncertain", reason: t.commentWriteUnconfirmed };
     return { kind: "committed" };
   } catch (cause) {
-    return { kind: "uncertain", reason: t.commentWriteUnconfirmedWith(reason(cause)) };
+    return { kind: "uncertain", reason: t.commentWriteUnconfirmedWith(reason(cause, options.language)) };
   }
 }
 
@@ -277,7 +277,7 @@ function sameContent(left: unknown, right: unknown): boolean {
     && sameContent(Reflect.get(left, key), Reflect.get(right, key)));
 }
 
-export function reason(cause: unknown): string { return cause instanceof Error ? cause.message : String(cause); }
+export function reason(cause: unknown, language?: LocaleSource): string { return describeError(cause, language); }
 
 export function resolveModuleIds(source: string, signatures: Record<string, readonly string[]>, language?: LocaleSource): Record<string, number> {
   const chunks = source.split(/(?=__d\(function\()/);
@@ -289,7 +289,7 @@ export function resolveModuleIds(source: string, signatures: Record<string, read
       const match = chunk.match(/\},(\d+),\[[\d,]*\]\);/);
       return match ? [Number(match[1])] : [];
     });
-    if (matching.length !== 1) throw new Error(text(language).moduleContractUnclear(name));
+    if (matching.length !== 1) throw new LocalizedError((m) => m.moduleContractUnclear(name), language);
     result[name] = matching[0];
   }
   return result;
@@ -304,7 +304,7 @@ export const MODULE_SIGNATURES = {
 const parseResultSchema = z.discriminatedUnion("success", [z.object({ success: z.literal(true), data: z.unknown() }), z.object({ success: z.literal(false) })]);
 function hostParse(contract: z.infer<typeof schema>, value: unknown, language?: LocaleSource): unknown {
   const result = parseResultSchema.parse(contract.safeParse(value));
-  if (!result.success) throw new Error(text(language).draftFormatChanged);
+  if (!result.success) throw new LocalizedError((m) => m.draftFormatChanged, language);
   return result.data;
 }
 
@@ -367,10 +367,10 @@ export async function discoverDraftHost(signal: AbortSignal, language?: LocaleSo
     const response = await fetch(url, { signal });
     if (!response.ok) continue;
     const source = await response.text();
-    if (signal.aborted) throw new Error(text(language).quotePluginClosed);
+    if (signal.aborted) throw new LocalizedError((m) => m.quotePluginClosed, language);
     if (!source.includes("flushDraftPersistStorage")) continue;
     const ids = resolveModuleIds(source, MODULE_SIGNATURES, language);
     return createDraftHost((id) => runtime.__r(id), ids, language);
   }
-  throw new Error(text(language).draftApiNotFound);
+  throw new LocalizedError((m) => m.draftApiNotFound, language);
 }

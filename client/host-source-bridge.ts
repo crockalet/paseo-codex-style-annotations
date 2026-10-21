@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { text as messagesFor, type LocaleSource } from "./messages";
+import { LocalizedError, text as messagesFor, type LocaleSource } from "./messages";
 import { resolveModuleIds, reason, type StoreBinding } from "./host-draft-bridge";
 import { fingerprint, type ExternalOrigin, type ExternalSnapshot, type FileIdentity, type WorkspaceIdentity } from "./external-origin";
 import type { ExternalLiveSource, SourceGeometry } from "./quote-sources";
@@ -516,7 +516,7 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
       if (root.matches('[data-testid="terminal-surface"]')) return captureTerminal(root);
       if (root.matches('[data-testid="git-diff-canvas-root"]')) return captureDiff(root);
       return captureFile(root);
-    } catch (error) { return { kind: "unavailable", root, reason: reason(error) }; }
+    } catch (error) { return { kind: "unavailable", root, reason: reason(error, language) }; }
   };
   const cleanups = new Set<() => void>();
   return {
@@ -579,7 +579,7 @@ export function resolveSemanticModuleIds(source: string, signatures: Record<stri
       if (!chunk.startsWith("__d(function(") || !tokens.every((token) => chunk.includes(token))) return [];
       const match = chunk.match(/\},(\d+),\[[\d,]*\]\);/); return match ? [Number(match[1])] : [];
     });
-    if (matching.length !== 1) throw new Error(messagesFor(language).selectionApiUnverified(name));
+    if (matching.length !== 1) throw new LocalizedError((m) => m.selectionApiUnverified(name), language);
     ids[name] = matching[0];
   }
   return ids;
@@ -590,9 +590,9 @@ export async function discoverSourceHost(signal: AbortSignal, language?: LocaleS
   const urls = Array.from(document.scripts).flatMap((script) => { if (!script.src) return []; const url = new URL(script.src, base); return url.origin === base.origin && url.protocol === base.protocol ? [url.href] : []; });
   for (const url of urls) {
     const response = await fetch(url, { signal }); if (!response.ok) continue;
-    const source = await response.text(); if (signal.aborted) throw new Error(messagesFor(language).pluginClosed);
+    const source = await response.text(); if (signal.aborted) throw new LocalizedError((m) => m.pluginClosed, language);
     if (!source.includes("useWorkspaceLayoutStore")) continue;
     return createSourceHost((id) => runtime.__r(id), source, language);
   }
-  throw new Error(messagesFor(language).selectionApiNotFound);
+  throw new LocalizedError((m) => m.selectionApiNotFound, language);
 }

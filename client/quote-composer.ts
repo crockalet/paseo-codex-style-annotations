@@ -109,7 +109,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
     const item = quotesFor(binding).find((quote) => quote.item.id === id)?.item;
     const saved = item && decodeExternal(item, options.language);
     if (!saved || saved.kind !== "external") return { kind: "unavailable", reason: t().sourceUnavailable } as const;
-    try { return await (await getSourceHost()).reveal(saved.snapshot); } catch (cause) { return { kind: "unavailable", reason: reason(cause) } as const; }
+    try { return await (await getSourceHost()).reveal(saved.snapshot); } catch (cause) { return { kind: "unavailable", reason: reason(cause, options.language) } as const; }
   };
   const pendingFor = (scope: string) => {
     let values = pending.get(scope);
@@ -130,7 +130,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
       schedule();
       return { kind: "committed" };
     } catch (cause) {
-      const message = t().commentDraftUnconfirmed(reason(cause));
+      const message = t().commentDraftUnconfirmed(reason(cause, options.language));
       if (values.get(ref.id)?.revision === edit.revision) values.set(ref.id, { ...edit, kind: "error", reason: message });
       schedule();
       return { kind: "uncertain", reason: message };
@@ -369,6 +369,8 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
       row.status.textContent = unsaved?.kind === "error" ? unsaved.reason : row.source.disabled ? t().sourceUnavailable : "";
       row.edit.disabled = decoded.kind !== "editable" || bindingStatus(binding) !== "ready";
       row.remove.disabled = bindingStatus(binding) !== "ready";
+      if (row.edit.textContent !== t().edit) row.edit.textContent = t().edit;
+      if (row.remove.textContent !== t().remove) row.remove.textContent = t().remove;
       row.edit.setAttribute("aria-label", t().editQuote(index + 1)); row.remove.setAttribute("aria-label", t().removeQuote(index + 1));
     });
   }
@@ -577,6 +579,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
     updatePreview(); requestLayout();
   }
   function schedule() { if (!scheduled && !lifetime.signal.aborted) { scheduled = true; queueMicrotask(sync); } }
+  const stopLanguage = options.language?.subscribe?.(schedule);
   const observer = new MutationObserver((records) => {
     const hostSelector = '[data-testid^="workspace-pane-"],[data-testid="message-input-root"],[data-testid^="workspace-tab-agent_"]';
     if (records.some((record) => {
@@ -593,11 +596,11 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
   const viewport = () => { schedule(); requestLayout(); };
   document.addEventListener("pointerdown", outside, true);
   window.addEventListener("resize", viewport); window.addEventListener("scroll", requestLayout, true);
-  type Capability = { kind: "ready"; host: DraftHost } | { kind: "unavailable"; reason: string };
+  type Capability = { kind: "ready"; host: DraftHost } | { kind: "unavailable"; reason: () => string };
   const ready = (options.discover ?? discoverDraftHost)(lifetime.signal, options.language).then((discovered): Capability => {
-    if (lifetime.signal.aborted) return { kind: "unavailable", reason: t().quotePluginClosed };
+    if (lifetime.signal.aborted) return { kind: "unavailable", reason: () => t().quotePluginClosed };
     host = discovered; unsubscribe = host.subscribe(schedule); schedule(); return { kind: "ready", host: discovered };
-  }).catch((cause: unknown): Capability => ({ kind: "unavailable", reason: reason(cause) }));
+  }).catch((cause: unknown): Capability => ({ kind: "unavailable", reason: () => reason(cause, options.language) }));
   const externalAdds = new WeakMap<ExternalOffer, { recipient: StoreBinding; promise: Promise<AddResult> }>();
   function addPrepared(binding: DraftBinding, attachment: QuoteAttachment, prepare: () => Promise<QuoteAttachment>, input: { annotationKind: Promise<AnnotationKind>; openComment: boolean; focusComposer: boolean; valid: () => boolean; remember: (scope: string) => void }): Promise<AddResult> {
     const ref: QuoteRef = { id: attachment.item.id, binding };
@@ -613,14 +616,14 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
           const policy = await options.preferences?.check(kind, options.language);
           if (policy && !policy.allowed) outcome = { kind: "not-written", reason: policy.reason, fallback: false };
           else if (lifetime.signal.aborted || bindingStatus(binding) !== "ready" || !input.valid()) outcome = { kind: "not-written", reason: t().sourceOrRecipientSwitched, fallback: false };
-          else if (capability.kind === "unavailable") outcome = { kind: "not-written", reason: capability.reason, fallback: !isStoreBinding(binding) };
+          else if (capability.kind === "unavailable") outcome = { kind: "not-written", reason: capability.reason(), fallback: !isStoreBinding(binding) };
           else {
             input.remember(scopeOf(binding));
             if (view) view.scope = scopeOf(binding);
             outcome = await mutateQuotes({ host: capability.host, binding, language: options.language, change: { kind: "add", attachment: prepared }, isCurrent: () => !lifetime.signal.aborted && input.valid() && (!options.preferences || options.preferences.enabled(kind)) });
             if (outcome.kind !== "not-written") input.remember(scopeOf(binding));
           }
-        } catch (cause) { outcome = { kind: "not-written", reason: reason(cause), fallback: false }; }
+        } catch (cause) { outcome = { kind: "not-written", reason: reason(cause, options.language), fallback: false }; }
         if (view && editor.kind === "create" && editor.view === view && bindingStatus(binding) === "ready") {
           view.scope = scopeOf(binding);
           if (outcome.kind === "not-written" || (outcome.kind === "uncertain" && !quotesFor(binding).some((entry) => entry.item.id === ref.id))) {
@@ -660,7 +663,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
         const unavailable = (event: Event) => {
           const element = event.target instanceof Element ? event.target : null;
           const root = element?.closest<HTMLElement>('[data-testid="workspace-file-pane"],[data-testid="git-diff-canvas-root"],[data-testid="terminal-surface"]');
-          if (root && root.getClientRects().length) listener({ kind: "unavailable", root, reason: reason(cause) });
+          if (root && root.getClientRects().length) listener({ kind: "unavailable", root, reason: reason(cause, options.language) });
         };
         document.addEventListener("pointerup", unavailable, true); document.addEventListener("keyup", unavailable, true);
         stop = () => { document.removeEventListener("pointerup", unavailable, true); document.removeEventListener("keyup", unavailable, true); };
@@ -669,7 +672,7 @@ export function installQuoteComposer(options: { discover?: (signal: AbortSignal,
     },
     setComment,
     dispose() {
-      lifetime.abort(); unsubscribe(); observer.disconnect(); for (const cleanup of sourceObservers) cleanup(); sourceHost?.dispose();
+      lifetime.abort(); unsubscribe(); stopLanguage?.(); observer.disconnect(); for (const cleanup of sourceObservers) cleanup(); sourceHost?.dispose();
       window.cancelAnimationFrame(frame); window.clearTimeout(closeTimer);
       document.removeEventListener("pointerdown", outside, true); window.removeEventListener("resize", viewport); window.removeEventListener("scroll", requestLayout, true);
       closeEditor(false); closePreview(false);
