@@ -429,8 +429,8 @@ function clamp(value: number, min: number, max: number): number {
 /** Installs the selection bar. Returns cleanup; a no-op off the web. */
 export function installSelectionBar(client: PluginClientContext, preferences?: AnnotationPreferences, language?: SettingsLanguage): () => void {
  if (Platform.OS !== "web" || typeof document === "undefined") return () => {};
- const quotes = installQuoteComposer({ preferences });
- const removeSentQuotes = installSentQuotes();
+ const quotes = installQuoteComposer({ preferences, language });
+ const removeSentQuotes = installSentQuotes({ language });
  const host = document.createElement("div");
  host.setAttribute("data-paseo-quote", "");
  host.setAttribute("contenteditable", "true");

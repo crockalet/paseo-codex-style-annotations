@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ANNOTATION_ICON, annotationPalette } from "./annotation-visuals";
 import { discoverSentNative, type SentNative } from "./sent-native";
 import { quotePluginIdSchema } from "./quote-identity";
+import { text, type LocaleSource } from "./messages";
 
 const NATIVE = '[data-testid="user-message"]';
 const OWNED = "data-paseo-sent-quotes";
@@ -37,11 +38,12 @@ button:hover{background:var(--quote-hover)}button:focus-visible{outline:2px soli
 .entry-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--quote-muted)}.entry-head>span{min-width:0;overflow-wrap:anywhere}.copy{flex-shrink:0;white-space:nowrap;border:0;border-radius:5px;background:transparent;padding:3px 6px}pre{font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0 0;user-select:text;-webkit-user-select:text}
 `;
 
-export function installSentQuotes(options: { discover?: (signal: AbortSignal) => Promise<SentNative> } = {}): () => void {
+export function installSentQuotes(options: { discover?: (signal: AbortSignal, language?: LocaleSource) => Promise<SentNative>; language?: LocaleSource } = {}): () => void {
   if (typeof document === "undefined" || typeof window === "undefined" || owners.has(document)) return () => {};
   const doc = document, view = window;
   owners.add(doc);
   const lifetime = new AbortController();
+  const t = () => text(options.language);
   const decorations = new Map<HTMLElement, Decoration>();
   const relinquished = new WeakSet<HTMLElement>();
   const isElement = (value: unknown): value is HTMLElement => value instanceof view.HTMLElement;
@@ -241,19 +243,19 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
     popup.setAttribute("contenteditable", "true"); popup.setAttribute("aria-readonly", "true");
     Object.assign(popup.style, { position: "fixed", top: "0", left: "0", width: "0", height: "0", zIndex: "2147482999" });
     const popupShadow = popup.attachShadow({ mode: "open" });
-    popupShadow.innerHTML = `<style>${CSS}</style><div class="panel" contenteditable="false" role="region" aria-label="已发送的注释" hidden><header>注释</header></div>`;
+    popupShadow.innerHTML = `<style>${CSS}</style><div class="panel" contenteditable="false" role="region" aria-label="${t().sentAnnotations}" hidden><header>${t().annotations}</header></div>`;
     const panel = popupShadow.querySelector<HTMLDivElement>(".panel")!; panel.tabIndex = -1;
-    panel.setAttribute("aria-label", row.pending ? "注释" : "已发送的注释");
-    button.querySelector("span")!.textContent = `${row.quotes.length} 条注释`;
+    panel.setAttribute("aria-label", row.pending ? t().annotations : t().sentAnnotations);
+    button.querySelector("span")!.textContent = t().count(row.quotes.length);
     for (const [index, quote] of row.quotes.entries()) {
       const entry = doc.createElement("section"); entry.className = "entry";
       const head = doc.createElement("div"); head.className = "entry-head";
       const title = doc.createElement("span"); title.textContent = `${index + 1}. ${quote.title}`;
-      const copy = doc.createElement("button"); copy.className = "copy"; copy.type = "button"; copy.textContent = "复制全文";
+      const copy = doc.createElement("button"); copy.className = "copy"; copy.type = "button"; copy.textContent = t().copyAll;
       copy.addEventListener("click", () => {
         if (!valid(decoration)) return;
-        if (!view.navigator.clipboard) { copy.textContent = "请选择全文复制"; return; }
-        void view.navigator.clipboard.writeText(quote.text).then(() => { if (!disposed && element.isConnected) copy.textContent = "已复制"; }).catch(() => { if (element.isConnected) copy.textContent = "复制失败"; });
+        if (!view.navigator.clipboard) { copy.textContent = t().copySelect; return; }
+        void view.navigator.clipboard.writeText(quote.text).then(() => { if (!disposed && element.isConnected) copy.textContent = t().copied; }).catch(() => { if (element.isConnected) copy.textContent = t().copyFailed; });
       });
       const text = doc.createElement("pre"); text.textContent = quote.text;
       head.append(title, copy); entry.append(head, text); panel.append(entry);
@@ -314,7 +316,7 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
       } else {
         decoration.row = row;
         decoration.element.setAttribute("aria-busy", String(row.pending));
-        decoration.panel.setAttribute("aria-label", row.pending ? "注释" : "已发送的注释");
+        decoration.panel.setAttribute("aria-label", row.pending ? t().annotations : t().sentAnnotations);
         annotationPalette(decoration.element, row.labelText, row.slot); annotationPalette(decoration.popup, row.labelText, row.slot);
       }
       place(decoration); active.add(native);
@@ -339,7 +341,7 @@ export function installSentQuotes(options: { discover?: (signal: AbortSignal) =>
   view.addEventListener("resize", onViewport);
   view.addEventListener("scroll", onViewport, true);
   const timer = view.setInterval(onVisible, 1_000);
-  void (options.discover ?? discoverSentNative)(lifetime.signal).then((native) => { if (!disposed) { capability = native; schedule(); } }).catch(() => { if (!disposed) console.warn("引用插件无法确认原生消息组件，已保留原生附件。"); });
+  void (options.discover ?? discoverSentNative)(lifetime.signal, options.language).then((native) => { if (!disposed) { capability = native; schedule(); } }).catch(() => { if (!disposed) console.warn(t().nativeUnconfirmed); });
   return () => {
     if (disposed) return;
     disposed = true; lifetime.abort(); observer.disconnect(); view.clearInterval(timer);
