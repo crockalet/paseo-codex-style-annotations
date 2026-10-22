@@ -298,11 +298,21 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
     });
   };
 
-  const terminalIds = () => resolveSemanticModuleIds(source, {
-    terminalComponent: ["data-terminal-scrollbar-root", "onRendererReadyChange", "useDOMImperativeHandle"],
-    terminalRuntime: ["TerminalEmulatorRuntime", "createTerminalResizeEvent", "encodeTerminalOutput", "window.__paseoTerminal"],
-    terminalPane: ["TerminalPane=function", "getWorkspaceTerminalSession", "onOpenWorkspaceFile", "terminal-surface"],
-  }, language);
+  // Scanning the whole bundle takes ~100 ms and the scan loop calls this on DOM mutations, so resolve once.
+  let terminalIdsResult: { ids: Record<string, number> } | { error: unknown } | undefined;
+  const terminalIds = () => {
+    terminalIdsResult ??= (() => {
+      try {
+        return { ids: resolveSemanticModuleIds(source, {
+          terminalComponent: ["data-terminal-scrollbar-root", "onRendererReadyChange", "useDOMImperativeHandle"],
+          terminalRuntime: ["TerminalEmulatorRuntime", "createTerminalResizeEvent", "encodeTerminalOutput", "window.__paseoTerminal"],
+          terminalPane: ["TerminalPane=function", "getWorkspaceTerminalSession", "onOpenWorkspaceFile", "terminal-surface"],
+        }, language) };
+      } catch (error) { return { error }; }
+    })();
+    if ("error" in terminalIdsResult) throw terminalIdsResult.error;
+    return terminalIdsResult.ids;
+  };
   interface Terminal {
     element: HTMLElement; cols: number; rows: number;
     getSelection(): string; hasSelection(): boolean; getSelectionPosition(): z.infer<typeof terminalPositionSchema> | undefined;
