@@ -296,19 +296,23 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
   };
 
   // Scanning the whole bundle takes ~100 ms and the scan loop calls this on DOM mutations, so resolve once.
-  let terminalIdsResult: { ids: Record<string, number> } | { error: unknown } | undefined;
+  // Only a signature mismatch is cached as a failure; anything else (e.g. out of memory) is retried.
+  let terminalIdsResult: Record<string, number> | ModuleSignatureMismatch | undefined;
   const terminalIds = () => {
-    terminalIdsResult ??= (() => {
+    if (!terminalIdsResult) {
       try {
-        return { ids: resolveSemanticModuleIds(source, {
+        terminalIdsResult = resolveSemanticModuleIds(source, {
           terminalComponent: ["data-terminal-scrollbar-root", "onRendererReadyChange", "useDOMImperativeHandle"],
           terminalRuntime: ["TerminalEmulatorRuntime", "createTerminalResizeEvent", "encodeTerminalOutput", "window.__paseoTerminal"],
           terminalPane: ["TerminalPane=function", "getWorkspaceTerminalSession", "onOpenWorkspaceFile", "terminal-surface"],
-        }) };
-      } catch (error) { return { error }; }
-    })();
-    if ("error" in terminalIdsResult) throw terminalIdsResult.error;
-    return terminalIdsResult.ids;
+        });
+      } catch (error) {
+        if (error instanceof ModuleSignatureMismatch) terminalIdsResult = error;
+        throw error;
+      }
+    }
+    if (terminalIdsResult instanceof ModuleSignatureMismatch) throw terminalIdsResult;
+    return terminalIdsResult;
   };
   interface Terminal {
     element: HTMLElement; cols: number; rows: number;
@@ -579,6 +583,8 @@ export function createSourceHost(requireModule: (id: number) => unknown, source:
   };
 }
 
+export class ModuleSignatureMismatch extends Error {}
+
 export function resolveSemanticModuleIds(source: string, signatures: Record<string, readonly string[]>): Record<string, number> {
   const chunks = source.split(/(?=__d\(function\()/), ids: Record<string, number> = {};
   for (const [name, tokens] of Object.entries(signatures)) {
@@ -586,7 +592,7 @@ export function resolveSemanticModuleIds(source: string, signatures: Record<stri
       if (!chunk.startsWith("__d(function(") || !tokens.every((token) => chunk.includes(token))) return [];
       const match = chunk.match(/\},(\d+),\[[\d,]*\]\);/); return match ? [Number(match[1])] : [];
     });
-    if (matching.length !== 1) throw new Error(`当前 Paseo 的 ${name} 选择接口无法验证。`);
+    if (matching.length !== 1) throw new ModuleSignatureMismatch(`当前 Paseo 的 ${name} 选择接口无法验证。`);
     ids[name] = matching[0];
   }
   return ids;
